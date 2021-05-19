@@ -1,0 +1,42 @@
+﻿/*!
+  @file pointsprite.vp
+	
+  @brief GLSL頂点シェーダ
+		 - PointSpriteによる点描画
+ 
+  @author Makoto Fujisawa
+  @date 2019
+*/
+// FILE --pointsprite.vp--
+#version 120
+
+//-----------------------------------------------------------------------------
+// 変数
+//-----------------------------------------------------------------------------
+uniform float pointRadius;  // ポイントサイズ
+uniform float pointScale;   // ピクセルスケールに変換するときの倍数
+uniform float zCrossFront;
+uniform float zCrossBack;
+varying float vValid;		// 断面図作成用クリッピングでの頂点の有効/無効をFPに伝えるための変数
+
+//-----------------------------------------------------------------------------
+// エントリ関数
+//-----------------------------------------------------------------------------
+void main(void)
+{
+	if(gl_Vertex.z > zCrossFront || gl_Vertex.z < zCrossBack){
+		vValid = 0.0;
+	} else{
+		vValid = 1.0;
+	}
+
+	// ウィンドウスペースでのポイントサイズを計算
+	vec3 posEye = vec3(gl_ModelViewMatrix * vec4(gl_Vertex.xyz, 1.0));
+	float dist = length(posEye);
+	gl_PointSize = pointRadius*(pointScale/dist);
+
+	gl_TexCoord[0] = gl_MultiTexCoord0;
+	gl_Position = gl_ModelViewProjectionMatrix * vec4(gl_Vertex.xyz, 1.0);
+
+	gl_FrontColor = gl_Color;
+}

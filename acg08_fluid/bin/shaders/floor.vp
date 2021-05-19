@@ -1,0 +1,32 @@
+/*!
+  @file floor.vp
+	
+  @brief GLSL頂点シェーダ
+ 
+  @author Makoto Fujisawa
+  @date 2019
+*/
+#version 120
+
+
+//-----------------------------------------------------------------------------
+// 変数
+//-----------------------------------------------------------------------------
+varying vec4 v4VertexPosEye;  // カメラ座標系での頂点位置
+varying vec3 v3NormalEye;		// カメラ座標系での頂点法線
+
+//-----------------------------------------------------------------------------
+// エントリ関数
+//-----------------------------------------------------------------------------
+void main(void)
+{
+	// 頂点色と頂点位置
+	gl_Position = gl_ModelViewProjectionMatrix *gl_Vertex;
+	gl_TexCoord[0] = gl_MultiTexCoord0;
+	gl_FrontColor = gl_Color;
+
+	// カメラ座標系での頂点位置と法線
+	v4VertexPosEye = gl_ModelViewMatrix *gl_Vertex;
+	v3NormalEye = gl_NormalMatrix *gl_Normal;
+}
+
