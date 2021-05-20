@@ -15,7 +15,7 @@
 // Include Files
 //-----------------------------------------------------------------------------
 #include "utils.h"
-//#include "dualquaternion.h"
+#include "dualquaternion.h"
 
 using namespace std;
 
@@ -23,7 +23,7 @@ using namespace std;
 
 // 間接自由度(BVHではCHANNEL)
 // これに対応する数のモーションが記述されているのでJointとは別で定義する
-class rxChannel
+class Channel
 {
 public:
 	//! 間接自由度
@@ -41,7 +41,7 @@ public:
 
 
 //! 間接ノード格納用
-class rxJoint
+class Joint
 {
 public:
 	string name;			//!< 間接名
@@ -52,15 +52,15 @@ public:
 	glm::mat4 global_trans;	//!< 間接位置のグローバル座標(ルート間接が原点)への変換行列(rest pose)
 	glm::mat4 global_animated_trans;	//!< 間接の移動を含む変換行列
 
-	//rxDualQuaternion dq_trans;
-	//rxDualQuaternion dq_animated_trans;
+	DualQuaternion dq_trans;
+	DualQuaternion dq_animated_trans;
 
 	bool is_site;			//!< 末端ノードかどうかのフラグ
 	glm::vec3 site_offset;		//!< 末端位置(間接位置からのオフセット)
 
 	vector<int> channels;	//!< 間接自由度(これ毎にモーションが定義される)
 
-	rxJoint()
+	Joint()
 	{
 		index = parent = -1;
 		offset = site_offset = glm::vec3(0.0);
@@ -78,19 +78,27 @@ public:
 //-----------------------------------------------------------------------------
 class CharacterAnimation
 {
-	vector<rxJoint> m_joints;		//!< 間接情報
-	vector<rxChannel> m_channels;	//!< 各間接自由度情報
-	vector<float> m_motions;		//!< 各間接自由度毎の動き(全フレーム分)
+	// VAOと頂点数,ポリゴン数をまとめて管理するための構造体:スケルトン描画用
+	struct Primitive
+	{
+		int nvrts, ntris;
+		GLuint vao;
+	};
 
-	int m_frames;					//!< アニメーションフレーム数
+	vector<Joint> m_joints;		//!< 間接情報
+	vector<Channel> m_channels;	//!< 各間接自由度情報
+	vector<float> m_motions;	//!< 各間接自由度毎の動き(全フレーム分)
+
+	int m_frames;				//!< アニメーションフレーム数
 	float m_dt;					//!< アニメーションタイムステップ幅
 
-	map<int, glm::mat4> m_trans;		//!< 各間接毎のグローバル変換行列(4x4)
-	vector<glm::mat4> m_vtrans;
+	// VAOs
+	Primitive m_sphere;			//!< 関節部分の球体
+	Primitive m_cylinder;		//!< ボーンを描画するための円筒
 
 public:
-	// デバッグ用
-	vector<glm::vec3> m_pos;
+	int m_skinning;				//!< スキニング方法
+	bool m_rest_pose;			//!< 初期ポーズ描画フラグ
 
 public:
 	//! コンストラクタ
@@ -98,32 +106,37 @@ public:
 	//! デストラクタ
 	~CharacterAnimation();
 
-	/*!
-	 * BVHファイル読み込み
-	 * @param[in] file_name ファイル名(フルパス)
-	 */
+	// BVHファイル読み込み
 	bool Read(string file_name);
 
+	// 描画＆情報取得
 	void Draw(int step, float scale = 1.0);
-	void AABB(glm::vec3 &minp, glm::vec3 &maxp){ calAABB(0, glm::vec3(0.0), minp, maxp); }
+	void AABB(glm::vec3 &minp, glm::vec3 &maxp, bool rest = false);// { calAABB(0, glm::vec3(0.0), minp, maxp); }
 	float Dt(void) const { return m_dt; }
 
-	int Trans(int step, float scale);
+	// スキニング用重みの計算
 	int Weight(const vector<glm::vec3> &vrts, vector< map<int, double> > &weights);
 
-	int SkinningLBS(int step, vector<glm::vec3> &vrts, const vector< map<int, double> > &weights);
-	int SkinningDQS(int step, vector<glm::vec3> &vrts, const vector< map<int, double> > &weights);
+	// スキニング
+	int Skinning(int step, vector<glm::vec3> &vrts, const vector< map<int, double> > &weights);
 
 private:
+	// 描画
 	void drawJoint(const int joint_idx, float *motion, float scale = 1.0);
 	void drawCapsule(glm::vec3 pos0, glm::vec3 pos1);
 
-	void calAABB(const int joint_idx, glm::vec3 pos, glm::vec3 &minp, glm::vec3 &maxp);
-	void calGlobalPos(const int joint_idx, glm::vec3 pos, vector<glm::vec3> &trans);
-	void calGlobalAnimatedTrans(const int joint_idx, const glm::mat4 mat, float *motion, float scale);
-	void calRestGlobalTrans(const int joint_idx, glm::mat4 mat);
+	// 各間接姿勢への変換行列の計算
+	int calTransMatrices(int step, float scale);
+	void calRestGlobalTrans(const int joint_idx, glm::mat4 mat, float scale);
+	void calAnimatedGlobalTrans(const int joint_idx, const glm::mat4 mat, float *motion, float scale);
 	
+	// メッシュ頂点の重み計算
 	float calWeight(const int joint_idx, const glm::vec3 &pos, const vector<glm::vec3> &posj);
+	void calGlobalPos(const int joint_idx, glm::vec3 pos, vector<glm::vec3> &trans);
+
+	// スキニング
+	int skinningLBS(int step, vector<glm::vec3> &vrts, const vector< map<int, double> > &weights);
+	int skinningDQS(int step, vector<glm::vec3> &vrts, const vector< map<int, double> > &weights);
 };
 
 

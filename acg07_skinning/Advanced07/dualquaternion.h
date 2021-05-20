@@ -15,48 +15,51 @@
 //-----------------------------------------------------------------------------
 // インクルードファイル
 //-----------------------------------------------------------------------------
-#include <memory.h>
-
 // glm
 #include "glm/glm.hpp"
 #include "glm/gtc/matrix_transform.hpp"
 
+#include <glm/gtc/quaternion.hpp>
+#include <glm/gtx/quaternion.hpp>
 
 //-----------------------------------------------------------------------------
-//! クオータニオンクラス
+//! Dual Quaternionクラス
+//  - 回転を表す四元数(Real)と平行移動を表す四元数(Dual)の組み合わせ
+//  - DQS(Dual Quaternion Skinning)用
+//  - 四元数はglm::quatを使用(参考: https://glm.g-truc.net/0.9.0/api/a00135.html )
 //-----------------------------------------------------------------------------
-class rxDualQuaternion
+class DualQuaternion
 {
 public:
-	rxQuaternion m_real;	// Real part (回転を表す四元数)
-	rxQuaternion m_dual;	// Dual part (平行移動を表す四元数=スカラー部が0+ベクトル部が平行移動ベクトル)
+	glm::quat m_real;	// Real part (回転を表す四元数)
+	glm::quat m_dual;	// Dual part (平行移動を表す四元数=スカラー部が0+ベクトル部が平行移動ベクトル)
 
 public:
 	//! デフォルトコンストラクタ
-	rxDualQuaternion()
+	DualQuaternion()
 	{
-		m_real = rxQuaternion(0, 0, 0, 1);	// 回転なし(θ=0)で四元数を初期化
-		m_dual = rxQuaternion(0, 0, 0, 0);	// 平行移動なし(0,0,0)で初期化
+		m_real = glm::quat(1, 0, 0, 0);	// 回転なし(θ=0)で四元数を初期化(glm::quatはw,x,y,zの順番)
+		m_dual = glm::quat(0, 0, 0, 0);	// 平行移動なし(0,0,0)で初期化
 	}
 
 	//! コンストラクタ:四元数2つで初期化
-	rxDualQuaternion(rxQuaternion r, rxQuaternion d)
+	DualQuaternion(glm::quat r, glm::quat d)
 	{
 		m_real = r; m_dual = d;
 	}
 
 	//! コンストラクタ:回転を表す四元数と平行移動ベクトルで初期化
-	rxDualQuaternion(rxQuaternion r, Vec3 t)
+	DualQuaternion(glm::quat r, glm::vec3 t)
 	{
 		m_real = r; 
-		rxQuaternion tq = rxQuaternion(t[0], t[1], t[2], 0.0);
+		glm::quat tq = glm::quat(0.0, t[0], t[1], t[2]);
 		m_dual = 0.5*tq*r;
 	}
 
 	//! 正規化
 	void normalize()
 	{
-		real r2 = norm(m_real);
+		float r2 = glm::length(m_real);
 		if(fabs(r2) < 1.0e-6){
 			return;
 		}
@@ -65,99 +68,82 @@ public:
 	}
 
 	//! 共役
-	rxDualQuaternion& conjugate()
+	DualQuaternion& conjugate()
 	{
-		m_real.conjugate();
-		m_dual.conjugate();
+		m_real = glm::conjugate(m_real);
+		m_dual = glm::conjugate(m_dual);
 		return *this;
 	}
 
 	//! 3次元座標のDQによる変換
-	Vec3 transform(const Vec3 &p) const
+	glm::vec3 transform(const glm::vec3 &p) const
 	{
-		double norm = m_real.norm();
-		rxQuaternion q_real = m_real/norm;
-		rxQuaternion q_dual = m_dual/norm;
-
-		Vec3 v_real = q_real.GetVector();
-		Vec3 v_dual = q_dual.GetVector();
-		Vec3 trans = (v_dual*q_real.w_() - v_real*q_dual.w_() + cross(v_real, v_dual))*2.0;
-
-		return q_real.rotate(p)+trans;
+		glm::quat q_trans = 2.0f*m_dual*glm::conjugate(m_real);
+		glm::vec3 trans(q_trans.x, q_trans.y, q_trans.z);
+		// glmでの四元数(glm::quat)とベクトル(glm::vec3)の掛け算(*)はそのベクトルを四元数で回転させる
+		return m_real*p+trans;
 	}
 
-	Vec3 rotate(const Vec3 &p) const
+	glm::vec3 rotate(const glm::vec3 &p) const
 	{
-		rxQuaternion tmp = m_real;
-		tmp.normalize();
-		return tmp.rotate(p);
+		glm::quat tmp = m_real;
+		tmp = glm::normalize(tmp);
+		return tmp*p;
 	}
 
 	//! 4x4変換行列からDQへの変換
-	void setMat(const Mat4x4 &m)
+	void setMat(const glm::mat4 &m)
 	{
-		rxQuaternion q_real(m);
-		Vec3 v_trans(m(0,3), m(1,3), m(2,3));
-		rxDualQuaternion dq(q_real, v_trans);
+		glm::quat q_real(m);		// mat4から回転を表す四元数を取り出す
+		glm::vec3 v_trans(m[3]);	// mat4から平行移動ベクトルを取り出す
+		DualQuaternion dq(q_real, v_trans);
 		*this = dq;
 	}
 
-
-	//! DQから4x4変換行列への変換
-	Mat4x4 getMat(void) const
-	{
-		Mat4x4 m;
-
-		return m;
-	}
-
-
-
 	//! 回転四元数の取得
-	rxQuaternion getRotation()
+	glm::quat getRotation()
 	{
 		return m_real;
 	}
 
 	//! 平行移動ベクトルの取得
-	Vec3 getTranslation()
+	glm::vec3 getTranslation()
 	{
-		rxQuaternion rc = m_real;
-		rc.conjugate();
-		rxQuaternion t = (m_dual*2.0)*rc;
-		return t.GetVector();
+		glm::quat rc = m_real;
+		glm::quat t = 2.0f*m_dual*glm::conjugate(rc);
+		return glm::vec3(t.x, t.y, t.z);
 	}
 
 	//
 	// オペレータ
 	// 
-	rxDualQuaternion& operator+=(const rxDualQuaternion &dq)
+	DualQuaternion& operator+=(const DualQuaternion &dq)
 	{
-		m_real += dq.m_real;
-		m_dual += dq.m_dual;
+		m_real = m_real + dq.m_real;
+		m_dual = m_dual + dq.m_dual;
 		return *this;
 	}
-	rxDualQuaternion& operator-=(const rxDualQuaternion &dq)
+	DualQuaternion& operator-=(const DualQuaternion &dq)
 	{
-		m_real -= dq.m_real;
-		m_dual -= dq.m_dual;
+		m_real = m_real + (-dq.m_real);
+		m_dual = m_dual + (-dq.m_dual);
 		return *this;
 	}
-	rxDualQuaternion& operator*=(const rxDualQuaternion &dq)
+	DualQuaternion& operator*=(const DualQuaternion &dq)
 	{
-		rxQuaternion r, d;
+		glm::quat r, d;
 		r = m_real*dq.m_real;
 		d = m_dual*dq.m_real + m_real*dq.m_dual;
 		m_real = r; m_dual = d;
 		return *this;
 	}
-	rxDualQuaternion& operator/=(const rxDualQuaternion &dq)
+	DualQuaternion& operator/=(const DualQuaternion &dq)
 	{
-		real r2 = norm(dq.m_real);
+		float r2 = glm::length(dq.m_real);
 		if(fabs(r2) > 1.0e-6){
-			rxQuaternion r, d;
+			glm::quat r, d;
 			r = m_real*dq.m_real/r2;
-			d = (m_dual*dq.m_real - m_real*dq.m_dual)/r2;
+			d = (m_dual*dq.m_real + (-m_real*dq.m_dual))/r2;
 			m_real = r; m_dual = d;
 		}
 		return *this;
@@ -165,42 +151,42 @@ public:
 };
 
 // 算術演算子はC++だとクラスのメンバ関数にするとa+10には対応できるが10+aに対応できないのでグローバル関数として定義する
-inline rxDualQuaternion operator+(const rxDualQuaternion &dq1, const rxDualQuaternion &dq2)
+inline DualQuaternion operator+(const DualQuaternion &dq1, const DualQuaternion &dq2)
 {	
-	rxDualQuaternion dq = dq1; 
+	DualQuaternion dq = dq1; 
 	dq += dq2; 
 	return dq; 
 }
-inline rxDualQuaternion operator-(const rxDualQuaternion &dq1, const rxDualQuaternion &dq2)
+inline DualQuaternion operator-(const DualQuaternion &dq1, const DualQuaternion &dq2)
 {	
-	rxDualQuaternion dq = dq1; 
+	DualQuaternion dq = dq1; 
 	dq -= dq2; 
 	return dq; 
 }
-inline rxDualQuaternion operator*(const rxDualQuaternion &dq1, const rxDualQuaternion &dq2)
+inline DualQuaternion operator*(const DualQuaternion &dq1, const DualQuaternion &dq2)
 {	
-	rxDualQuaternion dq = dq1; 
+	DualQuaternion dq = dq1; 
 	dq *= dq2; 
 	return dq; 
 }
-inline rxDualQuaternion operator/(const rxDualQuaternion &dq1, const rxDualQuaternion &dq2)
+inline DualQuaternion operator/(const DualQuaternion &dq1, const DualQuaternion &dq2)
 {	
-	rxDualQuaternion dq = dq1; 
+	DualQuaternion dq = dq1; 
 	dq /= dq2; 
 	return dq; 
 }
-inline rxDualQuaternion operator*(const rxDualQuaternion &dq1, const real &s)
+inline DualQuaternion operator*(const DualQuaternion &dq1, const float &s)
 {	
-	rxDualQuaternion dq = dq1; 
-	dq.m_real *= s; 
-	dq.m_dual *= s; 
+	DualQuaternion dq = dq1; 
+	dq.m_real = s*dq.m_real;
+	dq.m_dual = s*dq.m_dual;
 	return dq; 
 }
-inline rxDualQuaternion operator*(const real &s, const rxDualQuaternion &dq1)
+inline DualQuaternion operator*(const float &s, const DualQuaternion &dq1)
 {	
-	rxDualQuaternion dq = dq1; 
-	dq.m_real *= s; 
-	dq.m_dual *= s; 
+	DualQuaternion dq = dq1; 
+	dq.m_real = s*dq.m_real;
+	dq.m_dual = s*dq.m_dual;
 	return dq; 
 }
 

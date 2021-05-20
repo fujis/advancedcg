@@ -43,11 +43,15 @@ const float GOUND_HEIGHT = -1.0;
 const float DT = 0.01;
 
 // 描画フラグ
-static int RXD_BBOX = 0x0001;	//!< AABB(シミュレーション空間)
-static int RXD_AXIS = 0x0002;   //!< 軸
-static int RXD_FLOOR = 0x0004;	//!< 床
-static int RXD_PARAMS = 0x0008;	//!< パラメータ画面描画
-static int RXD_MESH = 0x0010;	//!< メッシュ描画
+const int RXD_VERTEX = 0x0001;
+const int RXD_EDGE = 0x0002;
+const int RXD_FACE = 0x0004;
+const int RXD_BBOX = 0x0010;		//!< AABB(シミュレーション空間)
+const int RXD_AXIS = 0x0020;		//!< 軸
+const int RXD_FLOOR = 0x0040;		//!< 床
+const int RXD_SKELETON = 0x0100;	//!< スケルトン描画
+const int RXD_MESH = 0x0200;		//!< メッシュ描画
+const int RXD_WEIGHT = 0x0400;		//!< 頂点の重み描画
 
 
 
@@ -71,15 +75,15 @@ protected:
 	static int m_simg_spacing;				//!< 画像保存間隔(=-1なら保存しない)
 
 	// キャラクターアニメーション関連
-	static CharacterAnimation m_ca;
-	static double m_scale;
-	static double m_yoffset;
+	static CharacterAnimation *m_ca;
+	static float m_scale;
+	static glm::vec3 m_offset;
 
 	//! マウスピック
 	static int m_picked;
 	static float m_pickdist;	//!< ピックされた点までの距離
 
-	// メッシュ
+	// メッシュ(Skinning用)
 	static rxPolygonsE m_poly_org;
 	static rxPolygonsE m_poly;
 	static GLuint m_tex;
@@ -114,7 +118,10 @@ private:
 	static void resetview(void);
 
 	// キャラクターアニメーションの初期化
-	static void initCA(void);
+	static void initCA(const string &bvh, const string &obj);
+
+	// ポリゴン描画(重みによる色分け切り替えあり)
+	static void drawPolygon(rxPolygonsE &poly, int draw = 0x04, float dn = 0.02f, bool col = true);
 };
 
 

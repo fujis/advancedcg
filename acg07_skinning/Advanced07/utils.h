@@ -94,9 +94,13 @@ inline void RX_SWAP(T &a, T &b){ T c; c = a; a = b; b = c; }
 //-----------------------------------------------------------------------------
 /*!
  * 頂点配列オブジェクトの作成
- * @param[in] vrts 頂点座標配列
- * @param[in] nvrts 頂点数
+ * - 最低限頂点情報があれば良い．必要のない引数は0を入れておく．
+ * @param[in] vrts,nvrts 頂点座標配列と頂点数
  * @param[in] dim 次元(2or3)
+ * @param[in] tris,ntris 三角形ポリゴンを構成する頂点インデックス列を格納した配列と三角形ポリゴン数
+ * @param[in] nrms,nnrms 各頂点の法線情報配列と法線数(=頂点数)
+ * @param[in] cols,ncols 各頂点の色情報配列と色情報数(=頂点数)
+ * @param[in] tcds,ntcds 各頂点のテクスチャ座標情報配列とテクスチャ座標数(=頂点数)
  * @return VAOオブジェクト
  */
 static inline GLuint CreateVAO(
@@ -182,7 +186,206 @@ static inline GLuint UpdateDataVAO(GLuint vao, GLuint index, const GLfloat *data
 	glBindVertexArray(0);
 	return vbo;
 }
+/*!
+ * VAOの破棄
+ *  - リンクされているVBOなどは破棄されないようなのでそれらは個別に行う必要あり
+ * @param[in] vao VAOオブジェクト
+ */
+static inline void DeleteVAO(GLuint vao)
+{
+	glDeleteVertexArrays(1, &vao);
+}
 
+
+
+/*!
+ * 球体形状のポリゴンメッシュを生成してVAOとして登録
+ * - 球の中心は原点(0,0,0)
+ * @param[out] nvrts,ntris 生成したメッシュの頂点数とポリゴン数を返す
+ * @param[in] rad 球の半径
+ * @param[in] slices,stacks 緯度方向(360度)と傾度方向(180度)のポリゴン分割数
+ * @return 生成したVAOオブジェクト
+ */
+static inline GLuint MakeSphereVAO(int &nvrts, int &ntris, float rad, int slices = 16, int stacks = 8)
+{
+	const float pi = glm::pi<float>();
+	vector<glm::vec3> vrts, nrms;
+	vector<GLuint> tris;
+
+	for(int j = 0; j <= stacks; ++j){
+		float t = float(j)/float(stacks);
+		float y = rad*cos(pi*t);
+		float rj = rad*sin(pi*t);	// 高さyでの球の断面円半径
+		for(int i = 0; i <= slices; ++i){
+			float s = float(i)/float(slices);
+			float x = rj*sin(2*pi*s);
+			float z = rj*cos(2*pi*s);
+			vrts.push_back(glm::vec3(x, y, z));
+			nrms.push_back(glm::normalize(glm::vec3(x, y, z)));
+		}
+	}
+	nvrts = static_cast<int>(vrts.size());
+	// メッシュ作成
+	int nx = slices+1;
+	for(int j = 0; j < stacks; ++j){
+		for(int i = 0; i < slices; ++i){
+			tris.push_back((i)+(j)*nx);
+			tris.push_back((i+1)+(j+1)*nx);
+			tris.push_back((i+1)+(j)*nx);
+
+			tris.push_back((i)+(j)*nx);
+			tris.push_back((i)+(j+1)*nx);
+			tris.push_back((i+1)+(j+1)*nx);
+		}
+	}
+	ntris = static_cast<int>(tris.size()/3);
+
+	return CreateVAO((GLfloat*)(&vrts[0]), nvrts, 3, &tris[0], ntris, (GLfloat*)(&nrms[0]), nvrts);
+}
+
+/*!
+ * 円筒形状のポリゴンメッシュを生成してVAOとして登録
+ * - 円筒の中心は原点(0,0,0)
+ * - 円筒の軸方向はz軸方向(0,0,1) - gluCylinderに合わせている
+ * @param[out] nvrts,ntris 生成したメッシュの頂点数とポリゴン数を返す
+ * @param[in] rad,len 円筒の半径と長さ
+ * @param[in] slices 円筒の円に沿ったポリゴン分割数
+ * @return 生成したVAOオブジェクト
+ */
+static inline GLuint MakeCylinderVAO(int &nvrts, int &ntris, float rad, float len, int slices = 16)
+{
+	const float pi = glm::pi<float>();
+	vector<glm::vec3> vrts, nrms;
+	vector<GLuint> tris;
+
+	for(int i = 0; i <= slices; ++i){
+		float t = float(i)/float(slices);
+		float x = rad*cos(2*pi*t);
+		float y = rad*sin(2*pi*t);
+		vrts.push_back(glm::vec3(x, y, -0.5*len));
+		nrms.push_back(glm::normalize(glm::vec3(x, y, 0.0)));
+		vrts.push_back(glm::vec3(x, y, 0.5*len));
+		nrms.push_back(glm::normalize(glm::vec3(x, y, 0.0)));
+
+	}
+	nvrts = static_cast<int>(vrts.size());
+
+	// メッシュ作成
+	for(int i = 0; i < 2*slices; i += 2){
+		tris.push_back(i);
+		tris.push_back((i+2 >= 2*slices ? 0 : i+2));
+		tris.push_back(i+1);
+
+		tris.push_back(i+1);
+		tris.push_back((i+2 >= 2*slices ? 0 : i+2));
+		tris.push_back((i+2 >= 2*slices ? 1 : i+3));
+	}
+	ntris = static_cast<int>(tris.size()/3);
+
+	return CreateVAO((GLfloat*)(&vrts[0]), nvrts, 3, &tris[0], ntris, (GLfloat*)(&nrms[0]), nvrts);
+}
+
+
+/*!
+ * カプセル形状(円筒の両端が半球)のポリゴンメッシュを生成してVAOとして登録
+ * - 形状の中心は原点(0,0,0)
+ * - カプセル形状の軸方向はz軸方向(0,0,1) - gluCylinderに合わせている
+ * @param[out] nvrts,ntris 生成したメッシュの頂点数とポリゴン数を返す
+ * @param[in] rad,len 円筒の半径と長さ
+ * @param[in] slices 円筒の円に沿ったポリゴン分割数
+ * @return 生成したVAOオブジェクト
+ */
+static inline GLuint MakeCapsuleVAO(int &nvrts, int &ntris, float rad, float len, int slices = 16, int stacks = 8)
+{
+	const float pi = glm::pi<float>();
+	vector<glm::vec3> vrts, nrms;
+	vector<GLuint> tris;
+	int offset = 0;
+
+	// 球体の中心断面(赤道部分)に沿った頂点を2重にして，
+	// その部分を円筒長さ分z方向に伸ばすことでカプセル形状を生成
+	for(int j = 0; j <= stacks; ++j){
+		float t = float(j)/float(stacks);
+		float z = rad*cos(pi*t);
+		float rj = rad*sin(pi*t);	// 高さyでの球の断面円半径
+		float zlen = (j < stacks/2 ? 0.5*len : -0.5*len);	// z方向のオフセット量
+
+		if(j == stacks/2){	// 中心断面(赤道部分)に頂点を追加
+			for(int i = 0; i <= slices; ++i){
+				float s = float(i)/float(slices);
+				float x = rj*sin(2*pi*s);
+				float y = rj*cos(2*pi*s);
+				vrts.push_back(glm::vec3(x, y, z-zlen));
+				nrms.push_back(glm::normalize(glm::vec3(x, y, z)));
+			}
+		}
+		for(int i = 0; i <= slices; ++i){
+			float s = float(i)/float(slices);
+			float x = rj*sin(2*pi*s);
+			float y = rj*cos(2*pi*s);
+			vrts.push_back(glm::vec3(x, y, z+zlen));
+			nrms.push_back(glm::normalize(glm::vec3(x, y, z)));
+		}
+	}
+
+	// メッシュ作成
+	int nx = slices+1;
+	for(int j = 0; j < stacks+1; ++j){
+		for(int i = 0; i < slices; ++i){
+			tris.push_back((i)+(j)*nx+offset);
+			tris.push_back((i+1)+(j)*nx+offset);
+			tris.push_back((i+1)+(j+1)*nx+offset);
+
+			tris.push_back((i)+(j)*nx+offset);
+			tris.push_back((i+1)+(j+1)*nx+offset);
+			tris.push_back((i)+(j+1)*nx+offset);
+		}
+	}
+
+	nvrts = static_cast<int>(vrts.size());
+	ntris = static_cast<int>(tris.size()/3);
+
+	return CreateVAO((GLfloat*)(&vrts[0]), nvrts, 3, &tris[0], ntris, (GLfloat*)(&nrms[0]), nvrts);
+}
+
+
+
+/*!
+ * VAOによるプリミティブ描画
+ * @param[in] obj 頂点数,ポリゴン数情報を含むVAO
+ * @param[in] draw 描画フラグ
+ */
+inline static void DrawPrimitive(const GLuint vao, const int nvrts, const int ntris, int draw)
+{
+	// エッジ描画における"stitching"をなくすためのオフセットの設定
+	glEnable(GL_POLYGON_OFFSET_FILL);
+	glPolygonOffset(1.0, 1.0);
+
+	// 図形の描画
+	glDisable(GL_LIGHTING);
+	glBindVertexArray(vao);
+	if(draw & 0x01){
+		glColor3d(1.0, 0.3, 0.3);
+		glPointSize(5.0);
+		glDrawArrays(GL_POINTS, 0, nvrts);
+	}
+	if(draw & 0x02){
+		glColor3d(0.5, 0.9, 0.9);
+		glLineWidth(4.0);
+		glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+		glDrawElements(GL_TRIANGLES, ntris*3, GL_UNSIGNED_INT, 0);
+	}
+	if(draw & 0x04){
+		glEnable(GL_LIGHTING);
+		//glDisable(GL_CULL_FACE);
+		glEnable(GL_AUTO_NORMAL);
+		glEnable(GL_NORMALIZE);
+		glColor3d(0.1, 0.5, 1.0);
+		glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+		glDrawElements(GL_TRIANGLES, ntris*3, GL_UNSIGNED_INT, 0);
+	}
+	glBindVertexArray(0);
+}
 
 
 
@@ -385,6 +588,33 @@ inline string GenTimeString(int h, int m, int s)
 	ss << GenZeroNo(m, 2) << ":";
 	ss << GenZeroNo(s, 2);
 	return ss.str();
+}
+
+
+
+/*!
+ * stringからpos以降で最初の区切り文字までを抽出
+ * @param[in] src 元の文字列
+ * @param[out] sub 抽出文字列
+ * @param[in] pos 探索開始位置
+ * @param[in] sep 区切り文字
+ * @return 次の抽出開始位置(","の後にスペースがあればそのスペースの後)
+ */
+inline int GetNextString(const string& src, string& sub, size_t pos, string sep = ",")
+{
+	size_t i = src.find(sep, pos);
+	if(i == string::npos) {
+		sub = src.substr(pos, string::npos);
+		return (int)string::npos;
+	}
+	else {
+		int cnt = 1;
+		while(src[i + cnt] == ' ') {    // 区切り文字の後のスペースを消す
+			cnt++;
+		}
+		sub = src.substr(pos, i - pos);
+		return (int)(i + cnt >= src.size() ? (int)string::npos : i + cnt);
+	}
 }
 
 

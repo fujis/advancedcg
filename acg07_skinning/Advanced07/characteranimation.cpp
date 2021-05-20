@@ -16,7 +16,10 @@
 // STLのstack : ノード情報格納に使用
 #include <stack>
 
-#include <GL/glu.h>
+// 四元数
+#include <glm/gtc/quaternion.hpp>
+#include <glm/gtx/quaternion.hpp>
+
 
 /*!
  * 先頭の空白(スペース，タブ)を削除
@@ -25,34 +28,9 @@
 inline void DeleteHeadSpace(string& buf)
 {
 	size_t pos;
-	while ((pos = buf.find_first_of(" 　\t")) == 0) {
+	while((pos = buf.find_first_of(" 　\t")) == 0) {
 		buf.erase(buf.begin());
-		if (buf.empty()) break;
-	}
-}
-
-/*!
- * stringからpos以降で最初の区切り文字までを抽出
- * @param[in] src 元の文字列
- * @param[out] sub 抽出文字列
- * @param[in] pos 探索開始位置
- * @param[in] sep 区切り文字
- * @return 次の抽出開始位置(","の後にスペースがあればそのスペースの後)
- */
-inline int GetNextString(const string& src, string& sub, size_t pos, string sep = ",")
-{
-	size_t i = src.find(sep, pos);
-	if (i == string::npos) {
-		sub = src.substr(pos, string::npos);
-		return (int)string::npos;
-	}
-	else {
-		int cnt = 1;
-		while (src[i + cnt] == ' ') {    // 区切り文字の後のスペースを消す
-			cnt++;
-		}
-		sub = src.substr(pos, i - pos);
-		return (int)(i + cnt >= src.size() ? (int)string::npos : i + cnt);
+		if(buf.empty()) break;
 	}
 }
 
@@ -67,6 +45,11 @@ CharacterAnimation::CharacterAnimation(void)
 {
 	m_frames = 1;
 	m_dt = 0.033;
+	m_skinning = 0;
+	m_rest_pose = false;
+
+	m_sphere.vao = MakeSphereVAO(m_sphere.nvrts, m_sphere.ntris, 0.5, 32, 16);
+	m_cylinder.vao = MakeCylinderVAO(m_cylinder.nvrts, m_cylinder.ntris, 0.5, 1.0, 32);
 }
 
 /*!
@@ -128,7 +111,7 @@ bool CharacterAnimation::Read(string file_name)
 		// "ROOT"or"JOINT"で始まる行が見つかったら間接ノード情報の始まり
 		if(buf.find("ROOT") == 0 || buf.find("JOINT") == 0){
 			// 間接ノードの作成
-			rxJoint joint;
+			Joint joint;
 			joint.parent = cur_idx;
 			cur_idx = int(m_joints.size());
 			joint.index = cur_idx;
@@ -175,16 +158,16 @@ bool CharacterAnimation::Read(string file_name)
 			pos = GetNextString(buf, sub, pos, " "); nchannels = atoi(sub.c_str()); // 間接自由度の数
 			m_joints[cur_idx].channels.resize(nchannels);
 			for (int i = 0; i < nchannels; ++i) {
-				rxChannel channel;
+				Channel channel;
 				channel.joint = cur_idx;
 				channel.index = int(m_channels.size());
 				pos = GetNextString(buf, sub, pos, " ");
-				if (sub == "Xposition") channel.type = rxChannel::X_POS;
-				else if (sub == "Yposition") channel.type = rxChannel::Y_POS;
-				else if (sub == "Zposition") channel.type = rxChannel::Z_POS;
-				else if (sub == "Xrotation") channel.type = rxChannel::X_ROT;
-				else if (sub == "Yrotation") channel.type = rxChannel::Y_ROT;
-				else if (sub == "Zrotation") channel.type = rxChannel::Z_ROT;
+				if (sub == "Xposition") channel.type = Channel::X_POS;
+				else if (sub == "Yposition") channel.type = Channel::Y_POS;
+				else if (sub == "Zposition") channel.type = Channel::Z_POS;
+				else if (sub == "Xrotation") channel.type = Channel::X_ROT;
+				else if (sub == "Yrotation") channel.type = Channel::Y_ROT;
+				else if (sub == "Zrotation") channel.type = Channel::Z_ROT;
 
 				m_channels.push_back(channel);
 				m_joints[cur_idx].channels[i] = channel.index;
@@ -229,46 +212,226 @@ bool CharacterAnimation::Read(string file_name)
 	return true;
 }
 
+
 /*!
-* ノードを再帰的にたどっていって各ノード座標からAABBを計算
-* @param[in] joint_idx 間接ノードインデックス
+* 動きを含めたスケルトンの描画
+* @param[in] step 現在のステップ数
+* @param[in] scale 描画スケール
 */
-void CharacterAnimation::calAABB(const int joint_idx, glm::vec3 pos, glm::vec3 &minp, glm::vec3 &maxp)
+void CharacterAnimation::Draw(int step, float scale)
 {
 	if(m_joints.empty()) return;
 
-	// 最小・最大座標の初期化(最初の1回のみ)
-	if(joint_idx == 0){
-		minp = glm::vec3(1000.0); maxp = glm::vec3(-1000.0);
-	}
+	size_t nchannels = m_channels.size();
+	float *motion = &m_motions[0];
 
-	// ジョイント座標の計算
-	const rxJoint& joint = m_joints[joint_idx];
-	pos += joint.offset;
-	if(joint.is_site){
-		pos += joint.site_offset;
-	}
+	// ルート関節から順番に全ての間接のグローバル変換行列(回転+平行移動)を計算
+	calTransMatrices(step, scale);
 
-	// 最小・最大座標の更新
-	for(int i = 0; i < 3; ++i){
-		if(pos[i] < minp[i]) minp[i] = pos[i];
-		if(pos[i] > maxp[i]) maxp[i] = pos[i];
+	// 各関節を再帰的に呼び出しながら描画
+	drawJoint(0, motion+nchannels*(step%m_frames), scale);
+}
+
+/*!
+ * 間接ノードの描画(子ノードも含めて再帰的に描画)
+ * @param[in] joint_idx 間接ノードインデックス
+ * @param[in] motion 間接自由度毎の動き(現フレームデータの先頭ポインタ)
+ * @param[in] scale 描画スケール
+ */
+void CharacterAnimation::drawJoint(const int joint_idx, float *motion, float scale)
+{
+	glPushMatrix();
+
+	const Joint& joint = m_joints[joint_idx];
+
+	//// 間接のオフセット,回転(motion)情報を直接使う場合
+	//// ルート間接は単純に動きのみ，子間接の場合は親ノードからオフセットを設定
+	//if(joint.parent == -1) glTranslatef(motion[0]*scale, motion[1]*scale, motion[2]*scale);
+	//else glTranslatef(joint.offset[0]*scale, joint.offset[1]*scale, joint.offset[2]*scale);
+
+
+	//// 親間接からの回転
+	//for(int i = 0; i < joint.channels.size(); ++i){
+	//	const Channel &channel = m_channels[joint.channels[i]];
+	//	float ang = motion[channel.index];
+	//	switch(channel.type){
+	//	case Channel::X_ROT: glRotatef(ang, 1.0f, 0.0f, 0.0f); break;
+	//	case Channel::Y_ROT: glRotatef(ang, 0.0f, 1.0f, 0.0f); break;
+	//	case Channel::Z_ROT: glRotatef(ang, 0.0f, 0.0f, 1.0f); break;
+	//	}
+	//}
+
+	glPushMatrix();
+
+	// 各間接の情報から算出された変換行列を使う場合(CalTransMatrices関数を先に呼び出す必要あり)
+	if(m_rest_pose) glMultMatrixf(glm::value_ptr(joint.global_trans));
+	else glMultMatrixf(glm::value_ptr(joint.global_animated_trans));
+
+	// 間接間のボーンの描画
+	if(joint.children.size() == 0){	// 子間接なし=末端(site)あり
+		drawCapsule(glm::vec3(0.0), joint.site_offset*scale);
 	}
+	else{	// 子間接が1個以上
+		for(int i = 0; i < joint.children.size(); ++i){
+			const Joint& child_joint = m_joints[joint.children[i]];
+			drawCapsule(glm::vec3(0.0), child_joint.offset*scale);
+		}
+	}
+	glPopMatrix();
 
 	// 子間接を再帰呼び出し
 	for(int i = 0; i < joint.children.size(); ++i){
-		calAABB(joint.children[i], pos, minp, maxp);
+		drawJoint(joint.children[i], motion, scale);
+	}
+
+	glPopMatrix();
+}
+
+/*!
+ * 2つのベクトル間の回転を表す四元数
+ *  - http://www.opengl-tutorial.org/intermediate-tutorials/tutorial-17-quaternions/
+ * @param[in] src,dst 2つのベクトル
+ * @return 四元数
+ */
+glm::quat calRotationBetweenVectors(glm::vec3 src, glm::vec3 dst)
+{
+	src = glm::normalize(src);
+	dst = glm::normalize(dst);
+
+	float c = glm::dot(src, dst);
+	glm::vec3 axis;
+
+	if(c < -1.0f + 1e-6){
+		// 2つのベクトルが反対方向を向いている場合
+		axis = glm::cross(glm::vec3(0.0f, 0.0f, 1.0f), src);
+		if(glm::length2(axis) < 0.01) // 平行の場合
+			axis = glm::cross(glm::vec3(1.0f, 0.0f, 0.0f), src);
+
+		axis = glm::normalize(axis);
+		return glm::quat(glm::radians(180.0f), axis);
+	}
+
+	axis = glm::cross(src, dst);
+
+	float s = sqrt((1+c)*2);
+	float inv_s = 1 / s;
+
+	return glm::quat(s*0.5f, axis.x*inv_s, axis.y*inv_s, axis.z*inv_s);
+}
+
+/*!
+ * カプセル描画(円筒の両端に半球をつけた形)
+ * @param[in] pos0,pos1 両端の位置
+ */
+void CharacterAnimation::drawCapsule(glm::vec3 pos0, glm::vec3 pos1)
+{
+	if(!m_cylinder.vao || !m_sphere.vao) return;
+
+	// 2端点間のベクトル
+	glm::vec3 dir = pos1 - pos0;
+	float len = glm::length(dir);
+	if(len < 0.0001){
+		return;
+	}
+	else{
+		dir /= len;
+	}
+
+	// 円筒のデフォルトの向き(z軸方向)と2端点間ベクトルの間の回転を洗わす四元数を計算
+	glm::quat q = calRotationBetweenVectors(glm::vec3(0.0f, 0.0f, 1.0f), dir);
+
+	glPushMatrix();
+
+	// 平行移動＆回転
+	glTranslatef(pos0[0], pos0[1], pos0[2]);
+	glMultMatrixf(glm::value_ptr(glm::mat4_cast(q)));
+
+	GLfloat rad = 0.025;
+
+	glEnable(GL_AUTO_NORMAL);
+	glEnable(GL_NORMALIZE);
+
+	glColor3d(0.1, 0.5, 1.0);
+	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+
+	// 円筒描画
+	glPushMatrix();
+	glTranslatef(0.0f, 0.0f, 0.5f*len);
+	glScalef(2*rad, 2*rad, len);
+	glBindVertexArray(m_cylinder.vao);
+	glDrawElements(GL_TRIANGLES, m_cylinder.ntris*3, GL_UNSIGNED_INT, 0);
+	glBindVertexArray(0);
+	glPopMatrix();
+
+	// 関節部分に球体を描画
+	glPushMatrix();
+	glScalef(2.6*rad, 2.6*rad, 2.6*rad);
+	glBindVertexArray(m_sphere.vao);
+	glDrawElements(GL_TRIANGLES, m_sphere.ntris*3, GL_UNSIGNED_INT, 0);
+	glBindVertexArray(0);
+	glPopMatrix();
+
+	glPushMatrix();
+	glTranslatef(0.0, 0.0, len);
+	glScalef(2.6*rad, 2.6*rad, 2.6*rad);
+	glBindVertexArray(m_sphere.vao);
+	glDrawElements(GL_TRIANGLES, m_sphere.ntris*3, GL_UNSIGNED_INT, 0);
+	glBindVertexArray(0);
+	glPopMatrix();
+
+	glPopMatrix();
+
+}
+
+
+/*!
+* スケルトンのAABBを計算
+* @param[in] joint_idx 間接ノードインデックス
+*/
+void CharacterAnimation::AABB(glm::vec3 &minp, glm::vec3 &maxp, bool rest)
+{
+	// 各関節の変換行列を計算
+	calTransMatrices(0, 1.0f);
+
+	minp = glm::vec3(1000.0); maxp = glm::vec3(-1000.0);
+
+	// 全間接についてグローバル座標での位置を求めてAABBを算出
+	vector<Joint>::iterator itr = m_joints.begin();
+	for(; itr != m_joints.end(); ++itr){
+		const Joint& joint = *itr;
+		glm::vec4 pos(0.0f, 0.0f, 0.0f, 1.0f);
+		if(rest){
+			pos = joint.global_trans*pos;
+		}
+		else{
+			pos = joint.global_animated_trans*pos;
+		}
+
+		// 最小・最大座標の更新
+		for(int i = 0; i < 3; ++i){
+			if(pos[i] < minp[i]) minp[i] = pos[i];
+			if(pos[i] > maxp[i]) maxp[i] = pos[i];
+		}
+
+		// 端点
+		if(joint.is_site){
+			// 最小・最大座標の更新
+			for(int i = 0; i < 3; ++i){
+				pos[i] += joint.site_offset[i];
+				if(pos[i] < minp[i]) minp[i] = pos[i];
+				if(pos[i] > maxp[i]) maxp[i] = pos[i];
+			}
+		}
+
 	}
 
 	// AABBで長さ0の辺が出来ないように調整(最後の1回のみ)
-	if(joint_idx == 0){
-		glm::vec3 dim = maxp-minp;
-		float l = glm::max(dim[0], dim[1], dim[2]);
-		if(l < 1.0e-6) l = 1.0;
-		for(int i = 0; i < 3; ++i){
-			if(maxp[i]-minp[i] < 1.0e-6){ 
-				minp[i] -= 0.05*l; maxp[i] += 0.05*l;
-			}
+	glm::vec3 dim = maxp-minp;
+	float l = glm::max(dim[0], dim[1], dim[2]);
+	if(l < 1.0e-6) l = 1.0;
+	for(int i = 0; i < 3; ++i){
+		if(maxp[i]-minp[i] < 1.0e-6){
+			minp[i] -= 0.05*l; maxp[i] += 0.05*l;
 		}
 	}
 }
@@ -276,18 +439,14 @@ void CharacterAnimation::calAABB(const int joint_idx, glm::vec3 pos, glm::vec3 &
 
 /*!
 * ノードを再帰的に辿っていって各ボーンのrest poseでのグローバル座標を計算
+* - 重み計算時に使う
 * @param[in] joint_idx 間接ノードインデックス
 */
 void CharacterAnimation::calGlobalPos(const int joint_idx, glm::vec3 pos, vector<glm::vec3> &trans)
 {
-	rxJoint& joint = m_joints[joint_idx];
+	Joint& joint = m_joints[joint_idx];
 
-	if(joint.parent == -1){
-		//joint_pos[0] = motion[0];
-		//joint_pos[1] = motion[1];
-		//joint_pos[2] = motion[2];
-	}
-	else{
+	if(joint.parent != -1){
 		pos[0] += joint.offset[0];
 		pos[1] += joint.offset[1];
 		pos[2] += joint.offset[2];
@@ -302,132 +461,11 @@ void CharacterAnimation::calGlobalPos(const int joint_idx, glm::vec3 pos, vector
 
 }
 
-
-
-/*!
-* ノードを再帰的に辿っていって各ボーンのrest poseでのグローバル座標変換行列の計算
-* @param[in] joint_idx 間接ノードインデックス
-*/
-void CharacterAnimation::calRestGlobalTrans(const int joint_idx, glm::mat4 mat)
-{
-	if(m_joints.empty()) return;
-
-	rxJoint& joint = m_joints[joint_idx];
-
-	glm::mat4 trs = glm::mat4(1.0f); // 単位行列で初期化
-	trs[0][3] = joint.offset[0];
-	trs[1][3] = joint.offset[1];
-	trs[2][3] = joint.offset[2];
-	mat *= trs;
-
-	joint.global_trans = mat;
-
-	// 子間接を再帰呼び出し
-	for(int i = 0; i < joint.children.size(); ++i){
-		calRestGlobalTrans(joint.children[i], mat);
-	}
-
-}
-
-
-
-/*!
-* ノードを再帰的に辿っていって各ボーンの変換行列を計算
-* @param[in] joint_idx 間接ノードインデックス
-*/
-void CharacterAnimation::calGlobalAnimatedTrans(const int joint_idx, const glm::mat4 parent_mat, float *motion, float scale)
-{
-	if(m_joints.empty()) return;
-
-	rxJoint& joint = m_joints[joint_idx];
-	glm::mat4 trs, rot;
-
-	// 単位行列で初期化
-	trs = glm::mat4(1.0f);
-	rot = glm::mat4(1.0f);
-
-	// ルート間接は単純に平行移動，子間接の場合は親ノードからオフセットを設定
-	if(joint.parent == -1){
-		trs[0][3] = motion[0]*scale;
-		trs[1][3] = motion[1]*scale;
-		trs[2][3] = motion[2]*scale;
-	}
-	else{
-		trs[0][3] = joint.offset[0]*scale;
-		trs[1][3] = joint.offset[1]*scale;
-		trs[2][3] = joint.offset[2]*scale;
-	}
-
-	// 親間接からの回転
-	for(int i = 0; i < joint.channels.size(); ++i){
-		const rxChannel &channel = m_channels[joint.channels[i]];
-		float ang = motion[channel.index]*RX_DEGREES_TO_RADIANS;
-		float c = cos(ang), s = sin(ang);
-		glm::mat4 ri = glm::mat4(1.0f);
-		if(channel.type == rxChannel::X_ROT){
-			ri[1][1] =  c; ri[1][2] = -s;
-			ri[2][1] =  s; ri[2][2] =  c;
-		}
-		else if(channel.type == rxChannel::Y_ROT){
-			ri[0][0] =  c; ri[0][2] =  s;
-			ri[2][0] = -s; ri[2][2] =  c;
-		}
-		else if(channel.type == rxChannel::Z_ROT){
-			ri[0][0] =  c; ri[0][1] = -s;
-			ri[1][0] =  s; ri[1][1] =  c;
-		}
-		rot = rot*ri;
-	}
-	glm::mat4 global_trans = parent_mat*trs*rot;
-
-	// 変換行列の格納
-	joint.global_animated_trans = global_trans;
-
-
-	// 子間接を再帰呼び出し
-	for(int i = 0; i < joint.children.size(); ++i){
-		calGlobalAnimatedTrans(joint.children[i], global_trans, motion, scale);
-	}
-
-}
-
-
-/*!
-* 各間接のrest poseでの変換行列および指定したステップでの動きを含む変換行列を計算ｎ
-* @param[in] step 現在のステップ数
-* @param[in] scale 描画スケール
-*/
-int CharacterAnimation::Trans(int step, float scale)
-{
-	if(m_joints.empty()) return 0;
-
-	float *motion = &m_motions[0];
-	size_t nchannels = m_channels.size();
-
-	glm::mat4 mat(1.0f);
-	calRestGlobalTrans(0, mat);
-
-	mat = glm::mat4(1.0f);
-	calGlobalAnimatedTrans(0, mat, motion+nchannels*(step%m_frames), scale);
-
-	// DQS用に行列をDualQuaternionに変換して格納しておく
-	int n_joints = static_cast<int>(m_joints.size());
-	for(int i = 0; i < n_joints; ++i){
-		glm::mat4 Bj = m_joints[i].global_trans;
-		glm::mat4 Wj = m_joints[i].global_animated_trans;
-		glm::mat4 Tj = Wj*(glm::inverse(Bj));
-		//m_joints[i].dq_animated_trans.setMat(Tj);	// HACK:
-	}
-
-
-	return 1;
-}
-
 /*!
 * 入力された頂点座標群からボーンの重みを距離に応じて計算
 * @param[in] vrts 頂点座標が格納されたベクトル
 * @param[out] weights vrtsと同じ大きさの配列で各頂点の重みを格納
-* @return 
+* @return
 */
 float CharacterAnimation::calWeight(const int joint_idx, const glm::vec3 &p, const vector<glm::vec3> &posj)
 {
@@ -436,7 +474,7 @@ float CharacterAnimation::calWeight(const int joint_idx, const glm::vec3 &p, con
 		return 1.0;
 	}
 	else{	// 親間接あり
-		float wmax = 0.25*glm::length(m_pos[joint_idx]+posj[parent_idx]);
+		float wmax = 0.25*glm::length(posj[joint_idx]+posj[parent_idx]);
 		if(fabs(wmax) <= 1.0e-6) return 1.0;
 		float dist = glm::length(posj[parent_idx]-p);
 		return (dist >= wmax ? 1.0f : 1.0f-dist/wmax);
@@ -444,14 +482,11 @@ float CharacterAnimation::calWeight(const int joint_idx, const glm::vec3 &p, con
 
 }
 
-
-
-
 /*!
 * 入力された頂点座標群からボーンの重みを距離に応じて計算
 * @param[in] vrts 頂点座標が格納されたベクトル
 * @param[out] weights vrtsと同じ大きさの配列で各頂点の重みを格納
-* @return 
+* @return
 */
 int CharacterAnimation::Weight(const vector<glm::vec3> &vrts, vector< map<int, double> > &weights)
 {
@@ -461,7 +496,6 @@ int CharacterAnimation::Weight(const vector<glm::vec3> &vrts, vector< map<int, d
 	vector<glm::vec3> posj;
 	posj.resize(m_joints.size(), glm::vec3(0.0));
 	calGlobalPos(0, glm::vec3(0.0), posj);
-	m_pos = posj; // デバッグ用
 
 	// 各頂点毎に最近傍の関節を求める
 	int n = (int)(posj.size()), vrt_idx = 0;
@@ -526,7 +560,7 @@ int CharacterAnimation::Weight(const vector<glm::vec3> &vrts, vector< map<int, d
 				}
 
 			}
-			
+
 		}
 		else if(min_bone != -1 && min_dist_b < min_dist){
 			// 一番近いのがボーン(間接間の中点)の場合は，そのボーン(親間接)のみを対応するボーンとして追加
@@ -536,25 +570,128 @@ int CharacterAnimation::Weight(const vector<glm::vec3> &vrts, vector< map<int, d
 
 		vrt_idx++;
 	}
-	
+
 
 
 	return 1;
 }
 
+
+
+
+
+/*!
+* ノードを再帰的に辿っていって各ボーンのrest poseでのグローバル座標変換行列の計算
+* @param[in] joint_idx 間接ノードインデックス
+*/
+void CharacterAnimation::calRestGlobalTrans(const int joint_idx, glm::mat4 mat, float scale)
+{
+	if(m_joints.empty()) return;
+
+	Joint& joint = m_joints[joint_idx];
+
+	glm::mat4 trs = glm::translate(glm::mat4(), joint.offset*scale); // 平行移動行列
+	mat *= trs;
+
+	joint.global_trans = mat;
+
+	// 子間接を再帰呼び出し
+	for(int i = 0; i < joint.children.size(); ++i){
+		calRestGlobalTrans(joint.children[i], mat, scale);
+	}
+
+}
+
+/*!
+* ノードを再帰的に辿っていって各ボーンの変換行列を計算
+* @param[in] joint_idx 間接ノードインデックス
+*/
+void CharacterAnimation::calAnimatedGlobalTrans(const int joint_idx, const glm::mat4 parent_mat, float *motion, float scale)
+{
+	if(m_joints.empty()) return;
+
+	Joint& joint = m_joints[joint_idx];
+
+	// ルート間接は単純に平行移動，子間接の場合は親ノードからオフセットを設定
+	glm::vec3 offset(0.0f);
+	if(joint.parent == -1){
+		offset = glm::vec3(motion[0], motion[1], motion[2]);
+	}
+	else{
+		offset = joint.offset;
+	}
+	glm::mat4 trs = glm::translate(glm::mat4(), offset*scale); // 平行移動行列
+
+	// 親間接からの回転
+	glm::mat4 rot(1.0f);	// 回転行列(単位行列で初期化)
+	for(int i = 0; i < joint.channels.size(); ++i){
+		const Channel &channel = m_channels[joint.channels[i]];
+		float ang = motion[channel.index];// 角度は[deg](glm::rotateに渡す角度も[deg]なので変換なし)
+		glm::mat4 ri = glm::mat4(1.0f);
+		if(channel.type == Channel::X_ROT){
+			ri = glm::rotate(ang, glm::vec3(1.0f, 0.0f, 0.0f));
+		}
+		else if(channel.type == Channel::Y_ROT){
+			ri = glm::rotate(ang, glm::vec3(0.0f, 1.0f, 0.0f));
+		}
+		else if(channel.type == Channel::Z_ROT){
+			ri = glm::rotate(ang, glm::vec3(0.0f, 0.0f, 1.0f));
+		}
+		rot = rot*ri;
+	}
+	glm::mat4 global_trans = parent_mat*trs*rot;
+
+	// 変換行列の格納
+	joint.global_animated_trans = global_trans;
+
+	// 子間接を再帰呼び出し
+	for(int i = 0; i < joint.children.size(); ++i){
+		calAnimatedGlobalTrans(joint.children[i], global_trans, motion, scale);
+	}
+
+}
+
+/*!
+* 各間接のrest poseでの変換行列および指定したステップでの動きを含む変換行列を計算
+* @param[in] step 現在のステップ数
+* @param[in] scale 描画スケール
+*/
+int CharacterAnimation::calTransMatrices(int step, float scale)
+{
+	if(m_joints.empty()) return 0;
+
+	float *motion = &m_motions[0];
+	size_t nchannels = m_channels.size();
+
+	glm::mat4 mat(1.0f);
+	calRestGlobalTrans(0, mat, scale);
+
+	mat = glm::mat4(1.0f);
+	calAnimatedGlobalTrans(0, mat, motion+nchannels*(step%m_frames), scale);
+
+	// DQS用に行列をDualQuaternionに変換して格納しておく
+	int n_joints = static_cast<int>(m_joints.size());
+	for(int i = 0; i < n_joints; ++i){
+		glm::mat4 Bj = m_joints[i].global_trans;
+		glm::mat4 Wj = m_joints[i].global_animated_trans;
+		glm::mat4 Tj = Wj*(glm::inverse(Bj));
+		m_joints[i].dq_animated_trans.setMat(Tj);
+	}
+
+
+	return 1;
+}
+
+
 /*!
 * スケルトンの動きに合わせてメッシュ頂点を移動
+* - LBSによるスキニング
 * @param[in] step 現在のステップ数
 * @param[inout] vrts 頂点座標が格納されたベクトル
 * @param[in] weights vrtsと同じ大きさの配列で各頂点の重みを格納
 */
-int CharacterAnimation::SkinningLBS(int step, vector<glm::vec3> &vrts, const vector< map<int, double> > &weights)
+int CharacterAnimation::skinningLBS(int step, vector<glm::vec3> &vrts, const vector< map<int, double> > &weights)
 {
-	if(m_joints.empty()) return 0;
-
-	// グローバル変換行列を計算
-	Trans(step, 1.0);
-
 	// 頂点毎に変換行列を重みをかけながら適用
 	int nv = (int)(vrts.size());
 	for(int i = 0; i < nv; ++i){
@@ -579,6 +716,73 @@ int CharacterAnimation::SkinningLBS(int step, vector<glm::vec3> &vrts, const vec
 	return 1;
 }
 
+/*!
+* スケルトンの動きに合わせてメッシュ頂点を移動
+* - DQSによるスキニング
+* @param[in] step 現在のステップ数
+* @param[inout] vrts 頂点座標が格納されたベクトル
+* @param[in] weights vrtsと同じ大きさの配列で各頂点の重みを格納
+*/
+int CharacterAnimation::skinningDQS(int step, vector<glm::vec3> &vrts, const vector< map<int, double> > &weights)
+{
+	// 頂点毎に変換DQを重みをかけながら適用
+	int nv = (int)(vrts.size());
+	for(int i = 0; i < nv; ++i){
+		const int n_joints = static_cast<int>(weights[i].size());
+
+		//DualQuaternion dq_blend;
+		//if(n_joints == 0){
+		//	dq_blend = DualQuaternion(glm::quat(1, 0, 0, 0), glm::vec3(0, 0, 0));
+		//}
+		//else{
+		//	// 1つ目の間接の動きの処理
+		//	map<int, double>::const_iterator itr = weights[i].begin();
+		//	int bone = itr->first;
+		//	float wij = itr->second;
+		//	dq_blend = wij*m_joints[bone].dq_animated_trans;
+
+		//	glm::quat q0;	// 1つ目の間接の回転を表す四元数
+		//	q0 = m_joints[bone].dq_animated_trans.getRotation();
+
+		//	// 2つ目以降の間接の動きの処理(1つ目と回転方向が逆にならないようにする)
+		//	itr++;
+		//	for(; itr != weights[i].end(); ++itr){
+		//		bone = itr->first;
+		//		wij = itr->second;
+
+		//		DualQuaternion dq = (bone == -1) ? DualQuaternion(glm::quat(1, 0, 0, 0), glm::vec3(0, 0, 0)) : m_joints[bone].dq_animated_trans;
+		//		if(glm::dot(dq.getRotation(), q0) < 0.0){
+		//			wij *= -1.0;
+		//		}
+
+		//		dq_blend += wij*dq;
+		//	}
+
+		//	glm::vec3 new_pos = dq_blend.transform(vrts[i]);
+		//	vrts[i] = new_pos;
+		//}
+
+		// 行列をDual Quaternionにその都度変換するだけのシンプルな例
+		DualQuaternion dq_blend(glm::quat(0, 0, 0, 0), glm::quat(0, 0, 0, 0));
+		map<int, double>::const_iterator itr = weights[i].begin();
+		for(; itr != weights[i].end(); ++itr){
+			int bone = itr->first;
+			float wij = static_cast<float>(itr->second);
+			glm::mat4 Bj = m_joints[bone].global_trans;
+			glm::mat4 Wj = m_joints[bone].global_animated_trans;
+			glm::mat4 Tj = Wj*(glm::inverse(Bj));
+
+			DualQuaternion dq;
+			dq.setMat(Tj);
+			dq_blend += wij*dq;
+		}
+
+		glm::vec3 new_pos = dq_blend.transform(vrts[i]);
+		vrts[i] = new_pos;
+	}
+
+	return 1;
+}
 
 /*!
 * スケルトンの動きに合わせてメッシュ頂点を移動
@@ -586,188 +790,19 @@ int CharacterAnimation::SkinningLBS(int step, vector<glm::vec3> &vrts, const vec
 * @param[inout] vrts 頂点座標が格納されたベクトル
 * @param[in] weights vrtsと同じ大きさの配列で各頂点の重みを格納
 */
-int CharacterAnimation::SkinningDQS(int step, vector<glm::vec3> &vrts, const vector< map<int, double> > &weights)
+int CharacterAnimation::Skinning(int step, vector<glm::vec3> &vrts, const vector< map<int, double> > &weights)
 {
 	if(m_joints.empty()) return 0;
 
 	// グローバル変換行列を計算
-	Trans(step, 1.0);
+	calTransMatrices(step, 1.0);
 
-	//// 頂点毎に変換DQを重みをかけながら適用
-	//int nv = (int)(vrts.size());
-	//for(int i = 0; i < nv; ++i){
-	//	const int n_joints = weights[i].size();
-	//	rxDualQuaternion dq_blend;
-
-	//	if(n_joints == 0){
-	//		dq_blend = rxDualQuaternion(rxQuaternion(0, 0, 0, 1), glm::vec3(0, 0, 0));
-	//	}
-	//	else{
-	//		// 1つ目の間接の動きの処理
-	//		map<int, double>::const_iterator itr = weights[i].begin();
-	//		int bone = itr->first;
-	//		float wij = itr->second;
-	//		dq_blend = wij*m_joints[bone].dq_animated_trans;
-
-	//		rxQuaternion q0;	// 1つ目の間接の回転を表す四元数
-	//		q0 = m_joints[bone].dq_animated_trans.getRotation();
-
-	//		// 2つ目以降の間接の動きの処理(1つ目と回転方向が逆にならないようにする)
-	//		itr++;
-	//		for(; itr != weights[i].end(); ++itr){
-	//			bone = itr->first;
-	//			wij = itr->second;
-
-	//			rxDualQuaternion dq = (bone == -1) ? rxDualQuaternion(rxQuaternion(0, 0, 0, 1), glm::vec3(0, 0, 0)) : m_joints[bone].dq_animated_trans;
-	//			if(dq.getRotation().Dot(q0) < 0.0){
-	//				wij *= -1.0;
-	//			}
-
-	//			dq_blend += wij*dq;
-	//		}
-
-	//		glm::vec3 new_pos = dq_blend.transform(vrts[i]);
-	//		vrts[i] = new_pos;
-	//	}
-	//	
-	//}
-
-	return 1;
-}
-
-
-/*!
-* 動きを含めたスケルトンの描画
-* @param[in] step 現在のステップ数
-* @param[in] scale 描画スケール
-*/
-void CharacterAnimation::Draw(int step, float scale)
-{
-	if(m_joints.empty()) return;
-
-	size_t nchannels = m_channels.size();
-	float *motion = &m_motions[0];
-
-	//Trans(step, scale, true);
-
-	drawJoint(0, motion+nchannels*(step%m_frames), scale);
-}
-
-/*!
- * 間接ノードの描画(子ノードも含めて再帰的に描画)
- * @param[in] joint_idx 間接ノードインデックス
- * @param[in] motion 間接自由度毎の動き(現フレームデータの先頭ポインタ)
- * @param[in] scale 描画スケール
- */
-void CharacterAnimation::drawJoint(const int joint_idx, float *motion, float scale)
-{
-
-	glPushMatrix();
-
-	const rxJoint& joint = m_joints[joint_idx];
-
-	// ルート間接は単純に動きのみ，子間接の場合は親ノードからオフセットを設定
-	if(joint.parent == -1) glTranslatef(motion[0]*scale, motion[1]*scale, motion[2]*scale);
-	else glTranslatef(joint.offset[0]*scale, joint.offset[1]*scale, joint.offset[2]*scale);
-
-	// 親間接からの回転
-	for(int i = 0; i < joint.channels.size(); ++i){
-		const rxChannel &channel = m_channels[joint.channels[i]];
-		float ang = motion[channel.index];
-		switch(channel.type){
-		case rxChannel::X_ROT: glRotatef(ang, 1.0f, 0.0f, 0.0f); break;
-		case rxChannel::Y_ROT: glRotatef(ang, 0.0f, 1.0f, 0.0f); break;
-		case rxChannel::Z_ROT: glRotatef(ang, 0.0f, 0.0f, 1.0f); break;
-		}
+	// スキニング
+	switch(m_skinning){
+	default:
+	case 0:
+		return skinningLBS(step, vrts, weights);
+	case 1:
+		return skinningDQS(step, vrts, weights);
 	}
-
-	glPushMatrix();
-
-	// 間接間のボーンの描画
-	if(joint.children.size() == 0){	// 子間接なし=末端(site)あり
-		drawCapsule(glm::vec3(0.0), joint.site_offset*scale);
-	}
-	else{	// 子間接が1個以上
-		for(int i = 0; i < joint.children.size(); ++i){
-			const rxJoint& child_joint = m_joints[joint.children[i]];
-			drawCapsule(glm::vec3(0.0), child_joint.offset*scale);
-		}
-	}
-	glPopMatrix();
-
-	// 子間接を再帰呼び出し
-	for(int i = 0; i < joint.children.size(); ++i){
-		drawJoint(joint.children[i], motion, scale);
-	}
-
-	glPopMatrix();
-}
-
-/*!
- * カプセル描画(円筒の両端に半球をつけた形)
- * @param[in] pos0,pos1 両端の位置
- */
-void CharacterAnimation::drawCapsule(glm::vec3 pos0, glm::vec3 pos1)
-{
-	GLUquadricObj* qobj;
-	qobj = gluNewQuadric();
-
-	glm::vec3 dir = pos1 - pos0;
-	float len = glm::length(dir);
-	if(len < 0.0001){
-		dir = glm::vec3(0.0, 0.0, 1.0); len = 1.0;
-	}
-	else{
-		dir /= len;
-	}
-
-	// 上方向の設定(y軸方向)
-	glm::vec3 up(0.0, 1.0, 0.0);
-
-	// ボーンの方向をz軸としてx軸方向を算出
-	glm::vec3 side = glm::cross(up, dir);
-	float side_len = glm::length(side);
-	glm::normalize(side);
-	if(side_len < 0.0001){	// dir==upだった場合の対策
-		up = glm::vec3(1.0, 0.0, 0.0);
-		side = glm::normalize(glm::cross(up, dir));
-	}
-
-	// x,z軸からy軸方向を算出
-	up = glm::normalize(glm::cross(dir, side));
-
-	// 回転行列の設定
-	GLfloat m[16] = { side[0], side[1], side[2], 0.0,
-					   up[0],   up[1],  up[2],    0.0,
-					   dir[0],  dir[1], dir[2],   0.0,
-					   0.0,     0.0,    0.0,      1.0 };
-	
-	glPushMatrix();
-
-	glTranslatef(pos0[0], pos0[1], pos0[2]);
-	glMultMatrixf(m);
-
-	GLfloat rad = 0.02;
-	GLuint slices = 8;
-	GLuint stacks = 3;
-
-	gluQuadricDrawStyle(qobj, GLU_FILL);
-	gluQuadricNormals(qobj, GLU_SMOOTH);
-	gluCylinder(qobj, rad, rad, len, slices, stacks);
-
-	glPushMatrix();
-	GLUquadricObj* qobj_s1 = gluNewQuadric();
-	gluSphere(qobj_s1, 1.3*rad, slices, slices);
-	//glutSolidSphere(1.3*rad, slices, slices);
-	glPopMatrix();
-
-	glPushMatrix();
-	glTranslatef(0.0, 0.0, len);
-	GLUquadricObj* qobj_s2 = gluNewQuadric();
-	gluSphere(qobj_s2, 1.3*rad, slices, slices);
-	//glutSolidSphere(1.3*rad, slices, slices);
-	glPopMatrix();
-
-	glPopMatrix();
-
 }

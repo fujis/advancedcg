@@ -53,8 +53,15 @@ Primitive SceneMLS::m_cylinder;
 Primitive SceneMLS::m_capsule;
 
 
-
-static GLuint makeSphereMesh(int &nvrts, int &ntris, float rad, int slices = 16, int stacks = 8)
+/*!
+ * 球体形状のポリゴンメッシュを生成してVAOとして登録
+ * - 球の中心は原点(0,0,0)
+ * @param[out] nvrts,ntris 生成したメッシュの頂点数とポリゴン数を返す
+ * @param[in] rad 球の半径
+ * @param[in] slices,stacks 緯度方向(360度)と傾度方向(180度)のポリゴン分割数
+ * @return 生成したVAOオブジェクト
+ */
+static inline GLuint MakeSphereVAO(int &nvrts, int &ntris, float rad, int slices = 16, int stacks = 8)
 {
 	const float pi = glm::pi<float>();
 	vector<glm::vec3> vrts, nrms;
@@ -91,7 +98,16 @@ static GLuint makeSphereMesh(int &nvrts, int &ntris, float rad, int slices = 16,
 	return CreateVAO((GLfloat*)(&vrts[0]), nvrts, 3, &tris[0], ntris, (GLfloat*)(&nrms[0]), nvrts);
 }
 
-static GLuint makeCylinderMesh(int &nvrts, int &ntris, float rad, float len, int slices = 16)
+/*!
+ * 円筒形状のポリゴンメッシュを生成してVAOとして登録
+ * - 円筒の中心は原点(0,0,0)
+ * - 円筒の軸方向はz軸方向(0,0,1) - gluCylinderに合わせている
+ * @param[out] nvrts,ntris 生成したメッシュの頂点数とポリゴン数を返す
+ * @param[in] rad,len 円筒の半径と長さ
+ * @param[in] slices 円筒の円に沿ったポリゴン分割数
+ * @return 生成したVAOオブジェクト
+ */
+static inline GLuint MakeCylinderVAO(int &nvrts, int &ntris, float rad, float len, int slices = 16)
 {
 	const float pi = glm::pi<float>();
 	vector<glm::vec3> vrts, nrms;
@@ -124,44 +140,32 @@ static GLuint makeCylinderMesh(int &nvrts, int &ntris, float rad, float len, int
 	return CreateVAO((GLfloat*)(&vrts[0]), nvrts, 3, &tris[0], ntris, (GLfloat*)(&nrms[0]), nvrts);
 }
 
-static GLuint makeCapsuleMesh(int &nvrts, int &ntris, float rad, float len, int slices = 16, int stacks = 8)
+
+/*!
+ * カプセル形状(円筒の両端が半球)のポリゴンメッシュを生成してVAOとして登録
+ * - 形状の中心は原点(0,0,0)
+ * - カプセル形状の軸方向はz軸方向(0,0,1) - gluCylinderに合わせている
+ * @param[out] nvrts,ntris 生成したメッシュの頂点数とポリゴン数を返す
+ * @param[in] rad,len 円筒の半径と長さ
+ * @param[in] slices 円筒の円に沿ったポリゴン分割数
+ * @return 生成したVAOオブジェクト
+ */
+static inline GLuint MakeCapsuleVAO(int &nvrts, int &ntris, float rad, float len, int slices = 16, int stacks = 8)
 {
 	const float pi = glm::pi<float>();
 	vector<glm::vec3> vrts, nrms;
 	vector<GLuint> tris;
 	int offset = 0;
 
-	//// 円筒部分頂点
-	//for(int i = 0; i <= slices; ++i){
-	//	float t = float(i)/float(slices);
-	//	float x = rad*cos(2*pi*t);
-	//	float y = rad*sin(2*pi*t);
-	//	vrts.push_back(glm::vec3(x, y, -0.5*len));
-	//	nrms.push_back(glm::normalize(glm::vec3(x, y, 0.0)));
-	//	vrts.push_back(glm::vec3(x, y, 0.5*len));
-	//	nrms.push_back(glm::normalize(glm::vec3(x, y, 0.0)));
-
-	//}
-	//offset = static_cast<int>(vrts.size());
-
-	//// 円筒部分メッシュ作成
-	//for(int i = 0; i < 2*slices; i += 2){
-	//	tris.push_back(i);
-	//	tris.push_back((i+2 >= 2*slices ? 0 : i+2));
-	//	tris.push_back(i+1);
-
-	//	tris.push_back(i+1);
-	//	tris.push_back((i+2 >= 2*slices ? 0 : i+2));
-	//	tris.push_back((i+2 >= 2*slices ? 1 : i+3));
-	//}
-
-	// 球体部分頂点
+	// 球体の中心断面(赤道部分)に沿った頂点を2重にして，
+	// その部分を円筒長さ分z方向に伸ばすことでカプセル形状を生成
 	for(int j = 0; j <= stacks; ++j){
 		float t = float(j)/float(stacks);
 		float z = rad*cos(pi*t);
 		float rj = rad*sin(pi*t);	// 高さyでの球の断面円半径
-		float zlen = (j < stacks/2 ? 0.5*len : -0.5*len);
-		if(j == stacks/2){
+		float zlen = (j < stacks/2 ? 0.5*len : -0.5*len);	// z方向のオフセット量
+
+		if(j == stacks/2){	// 中心断面(赤道部分)に頂点を追加
 			for(int i = 0; i <= slices; ++i){
 				float s = float(i)/float(slices);
 				float x = rj*sin(2*pi*s);
@@ -178,6 +182,7 @@ static GLuint makeCapsuleMesh(int &nvrts, int &ntris, float rad, float len, int 
 			nrms.push_back(glm::normalize(glm::vec3(x, y, z)));
 		}
 	}
+
 	// メッシュ作成
 	int nx = slices+1;
 	for(int j = 0; j < stacks+1; ++j){
@@ -199,8 +204,12 @@ static GLuint makeCapsuleMesh(int &nvrts, int &ntris, float rad, float len, int 
 }
 
 
-
-static inline void drawPrimitiveVAO(const Primitive &obj, int draw)
+/*!
+ * VAOによるプリミティブ描画
+ * @param[in] obj 頂点数,ポリゴン数情報を含むVAO
+ * @param[in] draw 描画フラグ
+ */
+static inline void DrawPrimitiveVAO(const Primitive &obj, int draw)
 {
 	// エッジ描画における"stitching"をなくすためのオフセットの設定
 	glEnable(GL_POLYGON_OFFSET_FILL);
@@ -232,10 +241,6 @@ static inline void drawPrimitiveVAO(const Primitive &obj, int draw)
 	glBindVertexArray(0);
 }
 
-
-static inline void drawCapsule(const Primitive &cylinder, const Primitive &sphere, int draw)
-{
-}
 
 /*!
  * 初期化関数
@@ -293,9 +298,9 @@ void SceneMLS::Init(int argc, char* argv[])
 	//}
 
 	// メッシュ初期化
-	m_sphere.vao = makeSphereMesh(m_sphere.nvrts, m_sphere.ntris, 1.0, 16, 8);
-	m_cylinder.vao = makeCylinderMesh(m_cylinder.nvrts, m_cylinder.ntris, 0.55, 2.2, 16);
-	m_capsule.vao = makeCapsuleMesh(m_capsule.nvrts, m_capsule.ntris, 0.5, 2.2, 16);
+	m_sphere.vao   = MakeSphereVAO(m_sphere.nvrts, m_sphere.ntris, 1.0, 16, 8);
+	m_cylinder.vao = MakeCylinderVAO(m_cylinder.nvrts, m_cylinder.ntris, 0.55, 2.2, 16);
+	m_capsule.vao  = MakeCapsuleVAO(m_capsule.nvrts, m_capsule.ntris, 0.5, 2.2, 16);
 
 	// トラックボール初期姿勢
 	m_view.SetTranslation(0, 0);
@@ -345,10 +350,10 @@ void SceneMLS::Draw(void)
 	if(m_draw & RXD_AXIS) drawAxis(0.6*dim[0], 3.0);
 
 	// 図形の描画
-	if(m_draw & RXD_SPHERE) drawPrimitiveVAO(m_sphere, m_draw);
-	if(m_draw & RXD_CYLINDER) drawPrimitiveVAO(m_cylinder, m_draw);
-	if(m_draw & RXD_CAPSULE) drawPrimitiveVAO(m_capsule, m_draw);
-	//if(m_draw & RXD_CAPSULE) drawCapsule(m_sphere, m_cylinder, m_draw);
+	if(m_draw & RXD_SPHERE) DrawPrimitiveVAO(m_sphere, m_draw);
+	if(m_draw & RXD_CYLINDER) DrawPrimitiveVAO(m_cylinder, m_draw);
+	if(m_draw & RXD_CAPSULE) DrawPrimitiveVAO(m_capsule, m_draw);
+	//if(m_draw & RXD_CAPSULE) DrawCapsule(m_sphere, m_cylinder, m_draw);
 
 
 	glPopMatrix();
