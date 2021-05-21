@@ -294,7 +294,8 @@ void SceneCA::ImGui(GLFWwindow* window)
 		if(ImGui::RadioButton("DQS", m_ca->m_skinning == 1)){ m_ca->m_skinning = 1; }
 		ImGui::Separator();
 		if(ImGui::Button("arm")){ initCA("simple_arm.bvh", "simple_arm.obj"); }
-		if(ImGui::Button("walking")){ initCA("sample_walking1.bvh", "simple_human.obj"); }
+		if(ImGui::Button("arm (twist)")){ initCA("simple_arm_twist.bvh", "simple_arm.obj"); }
+		if(ImGui::Button("walking")){ initCA("simple_walking.bvh", "simple_human.obj"); }
 	}
 	ImGui::Separator();
 	if(ImGui::Button("quit")){ glfwSetWindowShouldClose(window, GLFW_FALSE); }
@@ -418,7 +419,7 @@ void SceneCA::initCA(const string &fn_bvh, const string &fn_obj)
 		CalVertexNormals(m_poly.vertices, m_poly.vertices.size(), m_poly.faces, m_poly.faces.size(), m_poly.normals);
 
 		// weightのスムージング
-		for(int i = 0; i < 15; ++i) WeightFairingByUmbrella(m_poly);
+		for(int i = 0; i < 100; ++i) WeightFairingByUmbrella(m_poly);
 		NormalizeWeights(m_poly);
 
 		m_poly_org = m_poly;
@@ -511,8 +512,8 @@ void SceneCA::drawPolygon(rxPolygonsE &poly, int draw, float dn, bool col)
 	// エッジ描画
 	if(draw & RXD_EDGE){
 		glDisable(GL_LIGHTING);
-		glColor3d(0.5, 0.9, 0.9);
-		glLineWidth(4.0);
+		glColor3d(0.5, 0.5, 0.5);
+		glLineWidth(1.0);
 		for(int i = 0; i < pn; ++i){
 			const rxFace *face = &poly.faces[i];
 			int n = (int)face->vert_idx.size();

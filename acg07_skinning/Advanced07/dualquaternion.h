@@ -80,7 +80,7 @@ public:
 	{
 		glm::quat q_trans = 2.0f*m_dual*glm::conjugate(m_real);
 		glm::vec3 trans(q_trans.x, q_trans.y, q_trans.z);
-		// glmでの四元数(glm::quat)とベクトル(glm::vec3)の掛け算(*)はそのベクトルを四元数で回転させる
+		// glmでの四元数(glm::quat)とベクトル(glm::vec3)の掛け算(*)はそのベクトルを四元数で回転させる(qvq*)
 		return m_real*p+trans;
 	}
 
