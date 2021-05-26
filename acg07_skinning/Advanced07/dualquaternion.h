@@ -68,36 +68,12 @@ public:
 	}
 
 	//! 共役
-	DualQuaternion& conjugate()
+	DualQuaternion conjugate() const
 	{
-		m_real = glm::conjugate(m_real);
-		m_dual = glm::conjugate(m_dual);
-		return *this;
-	}
-
-	//! 3次元座標のDQによる変換
-	glm::vec3 transform(const glm::vec3 &p) const
-	{
-		glm::quat q_trans = 2.0f*m_dual*glm::conjugate(m_real);
-		glm::vec3 trans(q_trans.x, q_trans.y, q_trans.z);
-		// glmでの四元数(glm::quat)とベクトル(glm::vec3)の掛け算(*)はそのベクトルを四元数で回転させる(qvq*)
-		return m_real*p+trans;
-	}
-
-	glm::vec3 rotate(const glm::vec3 &p) const
-	{
-		glm::quat tmp = m_real;
-		tmp = glm::normalize(tmp);
-		return tmp*p;
-	}
-
-	//! 4x4変換行列からDQへの変換
-	void setMat(const glm::mat4 &m)
-	{
-		glm::quat q_real(m);		// mat4から回転を表す四元数を取り出す
-		glm::vec3 v_trans(m[3]);	// mat4から平行移動ベクトルを取り出す
-		DualQuaternion dq(q_real, v_trans);
-		*this = dq;
+		DualQuaternion dq_conj;
+		dq_conj.m_real = glm::conjugate(m_real);
+		dq_conj.m_dual = glm::conjugate(m_dual);
+		return dq_conj;
 	}
 
 	//! 回転四元数の取得
@@ -107,11 +83,9 @@ public:
 	}
 
 	//! 平行移動ベクトルの取得
-	glm::vec3 getTranslation()
+	glm::quat getTranslation()
 	{
-		glm::quat rc = m_real;
-		glm::quat t = 2.0f*m_dual*glm::conjugate(rc);
-		return glm::vec3(t.x, t.y, t.z);
+		return m_dual;
 	}
 
 	//

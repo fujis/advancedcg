@@ -186,6 +186,7 @@ static inline GLuint UpdateDataVAO(GLuint vao, GLuint index, const GLfloat *data
 	glBindVertexArray(0);
 	return vbo;
 }
+
 /*!
  * VAOの破棄
  *  - リンクされているVBOなどは破棄されないようなのでそれらは個別に行う必要あり
@@ -199,18 +200,22 @@ static inline void DeleteVAO(GLuint vao)
 
 
 /*!
- * 球体形状のポリゴンメッシュを生成してVAOとして登録
+ * 球体形状のポリゴンメッシュを生成
  * - 球の中心は原点(0,0,0)
  * @param[out] nvrts,ntris 生成したメッシュの頂点数とポリゴン数を返す
  * @param[in] rad 球の半径
  * @param[in] slices,stacks 緯度方向(360度)と傾度方向(180度)のポリゴン分割数
  * @return 生成したVAOオブジェクト
  */
-static inline GLuint MakeSphereVAO(int &nvrts, int &ntris, float rad, int slices = 16, int stacks = 8)
+static inline int MakeSphere(int &nvrts, vector<glm::vec3> &vrts, vector<glm::vec3> &nrms, int &ntris, vector<int> &tris, 
+							 float rad, int slices = 16, int stacks = 8)
 {
 	const float pi = glm::pi<float>();
-	vector<glm::vec3> vrts, nrms;
-	vector<GLuint> tris;
+	nvrts = 0;
+	ntris = 0;
+	vrts.clear();
+	nrms.clear();
+	tris.clear();
 
 	for(int j = 0; j <= stacks; ++j){
 		float t = float(j)/float(stacks);
@@ -240,7 +245,7 @@ static inline GLuint MakeSphereVAO(int &nvrts, int &ntris, float rad, int slices
 	}
 	ntris = static_cast<int>(tris.size()/3);
 
-	return CreateVAO((GLfloat*)(&vrts[0]), nvrts, 3, &tris[0], ntris, (GLfloat*)(&nrms[0]), nvrts);
+	return 1;
 }
 
 /*!
@@ -252,11 +257,10 @@ static inline GLuint MakeSphereVAO(int &nvrts, int &ntris, float rad, int slices
  * @param[in] slices 円筒の円に沿ったポリゴン分割数
  * @return 生成したVAOオブジェクト
  */
-static inline GLuint MakeCylinderVAO(int &nvrts, int &ntris, float rad, float len, int slices = 16)
+static inline int MakeCylinder(int &nvrts, vector<glm::vec3> &vrts, vector<glm::vec3> &nrms, int &ntris, vector<int> &tris,
+							   float rad, float len, int slices = 16, int stacks = 8)
 {
 	const float pi = glm::pi<float>();
-	vector<glm::vec3> vrts, nrms;
-	vector<GLuint> tris;
 
 	for(int i = 0; i <= slices; ++i){
 		float t = float(i)/float(slices);
@@ -282,7 +286,7 @@ static inline GLuint MakeCylinderVAO(int &nvrts, int &ntris, float rad, float le
 	}
 	ntris = static_cast<int>(tris.size()/3);
 
-	return CreateVAO((GLfloat*)(&vrts[0]), nvrts, 3, &tris[0], ntris, (GLfloat*)(&nrms[0]), nvrts);
+	return 1;
 }
 
 
@@ -295,11 +299,10 @@ static inline GLuint MakeCylinderVAO(int &nvrts, int &ntris, float rad, float le
  * @param[in] slices 円筒の円に沿ったポリゴン分割数
  * @return 生成したVAOオブジェクト
  */
-static inline GLuint MakeCapsuleVAO(int &nvrts, int &ntris, float rad, float len, int slices = 16, int stacks = 8)
+static inline int MakeCapsule(int &nvrts, vector<glm::vec3> &vrts, vector<glm::vec3> &nrms, int &ntris, vector<int> &tris,
+							  float rad, float len, int slices = 16, int stacks = 8)
 {
 	const float pi = glm::pi<float>();
-	vector<glm::vec3> vrts, nrms;
-	vector<GLuint> tris;
 	int offset = 0;
 
 	// 球体の中心断面(赤道部分)に沿った頂点を2重にして，
@@ -345,7 +348,7 @@ static inline GLuint MakeCapsuleVAO(int &nvrts, int &ntris, float rad, float len
 	nvrts = static_cast<int>(vrts.size());
 	ntris = static_cast<int>(tris.size()/3);
 
-	return CreateVAO((GLfloat*)(&vrts[0]), nvrts, 3, &tris[0], ntris, (GLfloat*)(&nrms[0]), nvrts);
+	return 1;
 }
 
 
@@ -1127,10 +1130,11 @@ static inline void drawFloor(glm::vec3 light_pos, glm::vec3 light_color, float y
 	static bool init = true;
 	static rxGLSL glslFloor;			//!< GLSLを使った描画
 	static GLuint texFloor = 0;				//!< 床のテクスチャ
-	static GLuint texFloorShadow = 0;		//!< 床の影用テクスチャ(まだ未実装)
 	if(init){
+#ifdef WIN32
 		// シェーダの初期化(最初の呼び出し時だけ実行)
 		glslFloor = CreateGLSLFromFile("shaders/floor.vp", "shaders/floor.fp", "floor");
+#endif
 		init = false;
 
 		// 床テクスチャ読み込み
@@ -1142,19 +1146,20 @@ static inline void drawFloor(glm::vec3 light_pos, glm::vec3 light_color, float y
 
 	}
 
+	glEnable(GL_TEXTURE_2D);
+	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+#ifdef WIN32
 	// 視点座標系のモデルビュー行列取得と視点座標系での光源位置計算
 	GLfloat eye_modelview[16];
 	glGetFloatv(GL_MODELVIEW_MATRIX, eye_modelview);
 	glm::vec3 light_pos_eye = MulMat4Vec3(eye_modelview, light_pos);
-
-	glEnable(GL_TEXTURE_2D);
-	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
 
 	// GLSLシェーダをセット
 	glUseProgram(glslFloor.Prog);
 
 	glUniform3f(glGetUniformLocation(glslFloor.Prog, "v3LightPosEye"), light_pos_eye[0], light_pos_eye[1], light_pos_eye[2]);
 	glUniform3f(glGetUniformLocation(glslFloor.Prog, "v3LightColor"), light_color[0], light_color[1], light_color[2]);
+#endif 
 
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, texFloor);
@@ -1165,12 +1170,6 @@ static inline void drawFloor(glm::vec3 light_pos, glm::vec3 light_color, float y
 
 	glEnable(GL_CULL_FACE);
 	glCullFace(GL_BACK);	// 裏面をカリング
-
-	// set shadow matrix as texture matrix
-	//matrix4f shadowMatrix = renderer->getShadowMatrix();
-	//glActiveTexture(GL_TEXTURE0);
-	//glMatrixMode(GL_TEXTURE);
-	//glLoadMatrixf((GLfloat *)shadowMatrix.get_value());
 
 	// 床用ポリゴン描画
 	glColor3d(1.0, 1.0, 1.0);

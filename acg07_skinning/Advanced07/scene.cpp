@@ -274,7 +274,7 @@ void SceneCA::ImGui(GLFWwindow* window)
 	ImGui::Text("menu:");
 
 	if(ImGui::Button("start/stop")){ switchanimation(-1); }
-	if(ImGui::Button("run a step")){ Timer(); }
+	if(ImGui::Button("run a step")){ m_animation_on = true; Timer(); m_animation_on = false; }
 	if(ImGui::Button("reset viewpos")){ resetview(); }
 	if(ImGui::Button("save screenshot")){ savedisplay(-1); }
 	ImGui::Separator();
@@ -290,15 +290,25 @@ void SceneCA::ImGui(GLFWwindow* window)
 	if(m_ca){
 		ImGui::Checkbox("rest pose", &(m_ca->m_rest_pose));
 		ImGui::Separator();
-		if(ImGui::RadioButton("LBS", m_ca->m_skinning == 0)){ m_ca->m_skinning = 0; }
-		if(ImGui::RadioButton("DQS", m_ca->m_skinning == 1)){ m_ca->m_skinning = 1; }
+		if(ImGui::RadioButton("LBS", m_ca->m_skinning == 0)){
+			m_ca->m_skinning = 0;
+			m_poly.vertices = m_poly_org.vertices;
+			m_ca->Skinning(m_currentstep, m_poly.vertices, m_poly.weights);
+			CalVertexNormals(m_poly.vertices, m_poly.vertices.size(), m_poly.faces, m_poly.faces.size(), m_poly.normals);
+		}
+		if(ImGui::RadioButton("DQS", m_ca->m_skinning == 1)){
+			m_ca->m_skinning = 1;
+			m_poly.vertices = m_poly_org.vertices;
+			m_ca->Skinning(m_currentstep, m_poly.vertices, m_poly.weights);
+			CalVertexNormals(m_poly.vertices, m_poly.vertices.size(), m_poly.faces, m_poly.faces.size(), m_poly.normals);
+		}
 		ImGui::Separator();
 		if(ImGui::Button("arm")){ initCA("simple_arm.bvh", "simple_arm.obj"); }
 		if(ImGui::Button("arm (twist)")){ initCA("simple_arm_twist.bvh", "simple_arm.obj"); }
 		if(ImGui::Button("walking")){ initCA("simple_walking.bvh", "simple_human.obj"); }
 	}
 	ImGui::Separator();
-	if(ImGui::Button("quit")){ glfwSetWindowShouldClose(window, GLFW_FALSE); }
+	if(ImGui::Button("quit")){ glfwSetWindowShouldClose(window, GL_TRUE); }
 
 }
 
@@ -365,7 +375,7 @@ void SceneCA::initCA(const string &fn_bvh, const string &fn_obj)
 	if(!m_ca->Read(p.find(fn_bvh))){
 		return;
 	}
-	//m_ca->Read("sample_walking.bvh");
+	//m_ca->CheckData(); // デバッグ用
 
 	// スケルトンモデルのAABB取得とスケール計算
 	glm::vec3 minp, maxp;
@@ -399,12 +409,7 @@ void SceneCA::initCA(const string &fn_bvh, const string &fn_obj)
 		glm::vec3 poly_ctr = 0.5f*(poly_maxp+poly_minp), poly_sl = 0.5f*(poly_maxp-poly_minp);
 		glm::vec3 size_conv = 1.05f*sl/poly_sl;	// ボーンがはみ出ないように少しだけ大きくする
 
-		// 全ての頂点をbboxにあわせて変換
-		//for(int i = 0; i < m_poly.vertices.size(); ++i){
-		//	m_poly.vertices[i] = (m_poly.vertices[i]-poly_ctr)*size_conv+ctr;
-		//}
-
-		// 元のメッシュモデルの縦横比を保存したままのスケーリングの場合こちらを使う
+		// 元のメッシュモデルの縦横比を保存したままのスケーリング
 		FitVertices(0.5f*(maxp+minp), 0.5f*(maxp-minp), m_poly.vertices);
 
 		// Skinning weightの初期値
@@ -414,6 +419,7 @@ void SceneCA::initCA(const string &fn_bvh, const string &fn_obj)
 		// エッジデータの作成(weightのスムージングのため)
 		SearchVertexFace(m_poly);
 		SearchEdge(m_poly);
+		cout << " num of edges : " << m_poly.edges.size() << endl;
 
 		// 頂点法線の計算
 		CalVertexNormals(m_poly.vertices, m_poly.vertices.size(), m_poly.faces, m_poly.faces.size(), m_poly.normals);
@@ -422,8 +428,12 @@ void SceneCA::initCA(const string &fn_bvh, const string &fn_obj)
 		for(int i = 0; i < 100; ++i) WeightFairingByUmbrella(m_poly);
 		NormalizeWeights(m_poly);
 
+		cout << " finish." << endl;
+
 		m_poly_org = m_poly;
 	}
+
+	m_currentstep = 0;
 }
 
 

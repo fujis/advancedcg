@@ -20,18 +20,19 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/quaternion.hpp>
 
-
 /*!
- * 先頭の空白(スペース，タブ)を削除
- * @param[inout] buf 処理文字列
+ * 文字列中の改行記号削除
+ * @param[inout] 文字列
  */
-inline void DeleteHeadSpace(string& buf)
+static inline void DeleteEOL(std::string &str)
 {
-	size_t pos;
-	while((pos = buf.find_first_of(" 　\t")) == 0) {
-		buf.erase(buf.begin());
-		if(buf.empty()) break;
+	const char CR = '\r';
+	const char LF = '\n';
+	std::string str1;
+	for(std::string::const_iterator itr = str.begin(); itr != str.end(); ++itr){
+		if(*itr != CR && *itr != LF) str1 += *itr;
 	}
+	str = str1;
 }
 
 
@@ -48,8 +49,23 @@ CharacterAnimation::CharacterAnimation(void)
 	m_skinning = 0;
 	m_rest_pose = false;
 
-	m_sphere.vao = MakeSphereVAO(m_sphere.nvrts, m_sphere.ntris, 0.5, 32, 16);
-	m_cylinder.vao = MakeCylinderVAO(m_cylinder.nvrts, m_cylinder.ntris, 0.5, 1.0, 32);
+	// 本当はVAOで描画をしていたがmac上でimgui_opengl2+vaoが上手く動かないため，メッシュ生成に切り替え
+	int nvrts, ntris;
+	vector<int> tris;
+	MakeSphere(nvrts, m_sphere.vertices, m_sphere.normals, ntris, tris, 0.5, 32, 16);
+	rxFace f;
+	f.resize(3);
+	for(int i = 0; i < ntris; ++i){
+		f[0] = tris[3*i]; f[1] = tris[3*i+1]; f[2] = tris[3*i+2];
+		m_sphere.faces.push_back(f);
+	}
+	tris.clear();
+	MakeCylinder(nvrts, m_cylinder.vertices, m_cylinder.normals, ntris, tris, 0.5, 1.0, 32, 16);
+	for(int i = 0; i < ntris; ++i){
+		f[0] = tris[3*i]; f[1] = tris[3*i+1]; f[2] = tris[3*i+2];
+		m_cylinder.faces.push_back(f);
+	}
+
 }
 
 /*!
@@ -92,6 +108,9 @@ bool CharacterAnimation::Read(string file_name)
 			buf.erase(buf.begin());
 			if (buf.empty()) break;
 		}
+
+		// 改行記号(EOL)削除(macだと改行記号が違うのでこれをしていないと最後の文字の処理時に問題が発生することがある)
+		DeleteEOL(buf);
 
 		// 空行は無視
 		if(buf.empty())
@@ -212,6 +231,54 @@ bool CharacterAnimation::Read(string file_name)
 	return true;
 }
 
+/*!
+ * 読み込んだBVHデータの画面出力(デバッグ用)
+ */
+void CharacterAnimation::CheckData(void)
+{
+	for(const Joint &joint : m_joints){
+		cout << "[" << joint.name << "]" << endl;
+		cout << "  index : " << joint.index << endl;
+		cout << "  offset : " << glm::to_string(joint.offset) << endl;
+		if(joint.is_site){
+			cout << "  site_offset : " << glm::to_string(joint.site_offset) << endl;
+		}
+
+		cout << "  channels : ";
+		for(int c : joint.channels){
+			const Channel &channel = m_channels[c];
+			if(channel.type == Channel::X_POS) cout << "Xposition ";
+			else if(channel.type == Channel::Y_POS) cout << "Yposition ";
+			else if(channel.type == Channel::Z_POS) cout << "Zposition ";
+			else if(channel.type == Channel::X_ROT) cout << "Xrotation ";
+			else if(channel.type == Channel::Y_ROT) cout << "Yrotation ";
+			else if(channel.type == Channel::Z_ROT) cout << "Zrotation ";
+		}
+		cout << endl;
+
+		cout << "  parent : " << joint.parent << endl;
+		if(!joint.children.empty()){
+			cout << "  childrens : ";
+			for(int child : joint.children){
+				cout << child << " ";
+			}
+			cout << endl;
+		}
+
+	}
+
+	cout << "[motion]" << endl;
+	int nchannels = static_cast<int>(m_channels.size());
+	int nmotions = static_cast<int>(m_motions.size());
+	for(int i = 0; i < nmotions; i += nchannels){
+		cout << "  ";
+		for(int j = 0; j < nchannels; ++j){
+			cout << m_motions[i+j] << " ";
+		}
+		cout << endl;
+	}
+}
+
 
 /*!
 * 動きを含めたスケルトンの描画
@@ -227,6 +294,12 @@ void CharacterAnimation::Draw(int step, float scale)
 
 	// ルート関節から順番に全ての間接のグローバル変換行列(回転+平行移動)を計算
 	calTransMatrices(step, scale);
+
+	glEnable(GL_AUTO_NORMAL);
+	glEnable(GL_NORMALIZE);
+
+	glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
+	glEnable(GL_COLOR_MATERIAL);
 
 	// 各関節を再帰的に呼び出しながら描画
 	drawJoint(0, motion+nchannels*(step%m_frames), scale);
@@ -264,8 +337,8 @@ void CharacterAnimation::drawJoint(const int joint_idx, float *motion, float sca
 	glPushMatrix();
 
 	// 各間接の情報から算出された変換行列を使う場合(CalTransMatrices関数を先に呼び出す必要あり)
-	if(m_rest_pose) glMultMatrixf(glm::value_ptr(joint.global_trans));
-	else glMultMatrixf(glm::value_ptr(joint.global_animated_trans));
+	if(m_rest_pose) glMultMatrixf(glm::value_ptr(joint.B));
+	else glMultMatrixf(glm::value_ptr(joint.W));
 
 	// 間接間のボーンの描画
 	if(joint.children.size() == 0){	// 子間接なし=末端(site)あり
@@ -325,7 +398,7 @@ glm::quat calRotationBetweenVectors(glm::vec3 src, glm::vec3 dst)
  */
 void CharacterAnimation::drawCapsule(glm::vec3 pos0, glm::vec3 pos1)
 {
-	if(!m_cylinder.vao || !m_sphere.vao) return;
+	if(m_cylinder.vertices.empty() || m_sphere.vertices.empty()) return;
 
 	// 2端点間のベクトル
 	glm::vec3 dir = pos1 - pos0;
@@ -348,9 +421,6 @@ void CharacterAnimation::drawCapsule(glm::vec3 pos0, glm::vec3 pos1)
 
 	GLfloat rad = 0.025;
 
-	glEnable(GL_AUTO_NORMAL);
-	glEnable(GL_NORMALIZE);
-
 	glColor3d(0.1, 0.5, 1.0);
 	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
@@ -358,31 +428,63 @@ void CharacterAnimation::drawCapsule(glm::vec3 pos0, glm::vec3 pos1)
 	glPushMatrix();
 	glTranslatef(0.0f, 0.0f, 0.5f*len);
 	glScalef(2*rad, 2*rad, len);
-	glBindVertexArray(m_cylinder.vao);
-	glDrawElements(GL_TRIANGLES, m_cylinder.ntris*3, GL_UNSIGNED_INT, 0);
-	glBindVertexArray(0);
+	drawPolygon(m_cylinder);
+	// VAOを使う場合
+	//glBindVertexArray(m_cylinder.vao);
+	//glDrawElements(GL_TRIANGLES, m_cylinder.ntris*3, GL_UNSIGNED_INT, 0);
+	//glBindVertexArray(0);
 	glPopMatrix();
 
 	// 関節部分に球体を描画
 	glPushMatrix();
 	glScalef(2.6*rad, 2.6*rad, 2.6*rad);
-	glBindVertexArray(m_sphere.vao);
-	glDrawElements(GL_TRIANGLES, m_sphere.ntris*3, GL_UNSIGNED_INT, 0);
-	glBindVertexArray(0);
+	drawPolygon(m_sphere);
+	//glBindVertexArray(m_sphere.vao);
+	//glDrawElements(GL_TRIANGLES, m_sphere.ntris*3, GL_UNSIGNED_INT, 0);
+	//glBindVertexArray(0);
 	glPopMatrix();
 
 	glPushMatrix();
 	glTranslatef(0.0, 0.0, len);
 	glScalef(2.6*rad, 2.6*rad, 2.6*rad);
-	glBindVertexArray(m_sphere.vao);
-	glDrawElements(GL_TRIANGLES, m_sphere.ntris*3, GL_UNSIGNED_INT, 0);
-	glBindVertexArray(0);
+	drawPolygon(m_sphere);
+	//glBindVertexArray(m_sphere.vao);
+	//glDrawElements(GL_TRIANGLES, m_sphere.ntris*3, GL_UNSIGNED_INT, 0);
+	//glBindVertexArray(0);
 	glPopMatrix();
 
 	glPopMatrix();
 
 }
 
+
+/*!
+ * ポリゴンの描画
+ * @param[in] polys ポリゴンデータ
+ * @param[in] draw 描画フラグ(下位ビットから頂点,エッジ,面,法線 - 1,2,4,8)
+ */
+void CharacterAnimation::drawPolygon(rxPolygons &poly)
+{
+	// 頂点数とポリゴン数
+	int vn = (int)poly.vertices.size();
+	int pn = (int)poly.faces.size();
+
+	// すべてのポリゴンを描画
+	for(int i = 0; i < pn; ++i){
+		const rxFace *face = &(poly.faces[i]);
+		int n = (int)face->vert_idx.size();
+
+		// ポリゴン描画
+		glBegin(GL_POLYGON);
+		for(int j = 0; j < n; ++j){
+			int idx = face->vert_idx[j];
+			glNormal3fv(glm::value_ptr(poly.normals[idx]));
+			glVertex3fv(glm::value_ptr(poly.vertices[idx]));
+		}
+		glEnd();
+	}
+
+}
 
 /*!
 * スケルトンのAABBを計算
@@ -401,10 +503,10 @@ void CharacterAnimation::AABB(glm::vec3 &minp, glm::vec3 &maxp, bool rest)
 		const Joint& joint = *itr;
 		glm::vec4 pos(0.0f, 0.0f, 0.0f, 1.0f);
 		if(rest){
-			pos = joint.global_trans*pos;
+			pos = joint.B*pos;
 		}
 		else{
-			pos = joint.global_animated_trans*pos;
+			pos = joint.W*pos;
 		}
 
 		// 最小・最大座標の更新
@@ -593,7 +695,7 @@ void CharacterAnimation::calRestGlobalTrans(const int joint_idx, glm::mat4 mat, 
 	glm::mat4 trs = glm::translate(glm::mat4(), joint.offset*scale); // 平行移動行列
 	mat *= trs;
 
-	joint.global_trans = mat;
+	joint.B = mat;
 
 	// 子間接を再帰呼び出し
 	for(int i = 0; i < joint.children.size(); ++i){
@@ -642,7 +744,7 @@ void CharacterAnimation::calAnimatedGlobalTrans(const int joint_idx, const glm::
 	glm::mat4 global_trans = parent_mat*trs*rot;
 
 	// 変換行列の格納
-	joint.global_animated_trans = global_trans;
+	joint.W = global_trans;
 
 	// 子間接を再帰呼び出し
 	for(int i = 0; i < joint.children.size(); ++i){
@@ -663,21 +765,13 @@ int CharacterAnimation::calTransMatrices(int step, float scale)
 	float *motion = &m_motions[0];
 	size_t nchannels = m_channels.size();
 
+	// rest(bind) poseでのワールド変換行列の計算
 	glm::mat4 mat(1.0f);
 	calRestGlobalTrans(0, mat, scale);
 
+	// アニメーション時(stepステップ)でのワールド変換行列の計算
 	mat = glm::mat4(1.0f);
 	calAnimatedGlobalTrans(0, mat, motion+nchannels*(step%m_frames), scale);
-
-	// DQS用に行列をDualQuaternionに変換して格納しておく
-	int n_joints = static_cast<int>(m_joints.size());
-	for(int i = 0; i < n_joints; ++i){
-		glm::mat4 Bj = m_joints[i].global_trans;
-		glm::mat4 Wj = m_joints[i].global_animated_trans;
-		glm::mat4 Tj = Wj*(glm::inverse(Bj));
-		m_joints[i].dq_animated_trans.setMat(Tj);
-	}
-
 
 	return 1;
 }
@@ -690,27 +784,54 @@ int CharacterAnimation::calTransMatrices(int step, float scale)
 * @param[inout] vrts 頂点座標が格納されたベクトル
 * @param[in] weights vrtsと同じ大きさの配列で各頂点の重みを格納
 */
-int CharacterAnimation::skinningLBS(int step, vector<glm::vec3> &vrts, const vector< map<int, double> > &weights)
+int CharacterAnimation::skinningLBS(vector<glm::vec3> &vrts, const vector< map<int, double> > &weights)
 {
 	// 頂点毎に変換行列を重みをかけながら適用
 	int nv = (int)(vrts.size());
 	for(int i = 0; i < nv; ++i){
-		glm::vec4 v(vrts[i][0], vrts[i][1], vrts[i][2], 1.0);
+		const int n_joints = static_cast<int>(weights[i].size());	// 頂点vに対応するジョイント数
+		glm::vec4 v(vrts[i][0], vrts[i][1], vrts[i][2], 1.0);	// 更新前(オリジナル)のスキンメッシュ頂点位置
+		glm::vec4 v_new = v;	// 更新後のスキンメッシュ頂点位置
 
+		// TODO:この部分にLBSによる頂点位置の計算を書く
+		// ・変数v_newにスキンメッシュ頂点vのLBSによる更新後の位置を格納する
+		// ・元の頂点座標は3次元ベクトル(glm::vec3)として格納されているが，
+		//   4x4行列との演算のために4次元ベクトル(glm::vec4)に変換していることに注意
+		// ・頂点vに対応するジョイント番号とその重みは以下のようにして取得できる
+		//	map<int, double>::const_iterator itr = weights[i].begin();
+		//	for(; itr != weights[i].end(); ++itr){
+		//		int j = itr->first;	// ジョイント番号
+		//		float wij = static_cast<float>(itr->second);	// 重み
+		//		// ここにジョイントjに関する処理を書く
+		//
+		//	}
+		// ・ジョイントjのrest(bind) poseでのワールド変換行列(スライドp28のBj)は
+		//    m_joints[j].B
+		//   に格納されており，回転を含むワールド変換行列(スライドp28のWj)は
+		//    m_joints[j].W
+		//   に格納されている(どちらもglm::mat4型)
+		// [glmでのベクトル・行列演算について]
+		// ・glm::mat4 M(0.0f) と定義時に引数に0を指定すると0で初期化，
+		//   glm::mat4 M(1.0f) と指定すると単位行列で初期化される(LBSでは行列WB^-1を足していくので単位行列ではなく...)
+		// ・glmでの行列Mとベクトルvの掛け算は単純に M*v でよい(結果のベクトルが返ってくる)
+		// ・glmでの逆行列計算は glm::inverse() を使うと良い
+
+		// ----課題ここから----
 		glm::mat4 blend_mat(0.0f);
 		map<int, double>::const_iterator itr = weights[i].begin();
 		for(; itr != weights[i].end(); ++itr){
-			int bone = itr->first;
+			int j = itr->first;
 			float wij = static_cast<float>(itr->second);
-			glm::mat4 Bj = m_joints[bone].global_trans;
-			glm::mat4 Wj = m_joints[bone].global_animated_trans;
+			glm::mat4 Bj = m_joints[j].B;
+			glm::mat4 Wj = m_joints[j].W;
 			glm::mat4 Tj = Wj*(glm::inverse(Bj));
 
 			blend_mat += wij*Tj;
 		}
+		v_new = blend_mat*v;
+		// ----課題ここまで----
 
-		glm::vec4 new_pos = blend_mat*v;
-		vrts[i] = glm::vec3(new_pos[0], new_pos[1], new_pos[2]);
+		vrts[i] = glm::vec3(v_new[0], v_new[1], v_new[2]);
 	}
 
 	return 1;
@@ -723,62 +844,68 @@ int CharacterAnimation::skinningLBS(int step, vector<glm::vec3> &vrts, const vec
 * @param[inout] vrts 頂点座標が格納されたベクトル
 * @param[in] weights vrtsと同じ大きさの配列で各頂点の重みを格納
 */
-int CharacterAnimation::skinningDQS(int step, vector<glm::vec3> &vrts, const vector< map<int, double> > &weights)
+int CharacterAnimation::skinningDQS(vector<glm::vec3> &vrts, const vector< map<int, double> > &weights)
 {
 	// 頂点毎に変換DQを重みをかけながら適用
 	int nv = (int)(vrts.size());
 	for(int i = 0; i < nv; ++i){
-		const int n_joints = static_cast<int>(weights[i].size());
+		const int n_joints = static_cast<int>(weights[i].size());	// 頂点vに対応するジョイント数
+		glm::vec3 v = vrts[i];	// 更新前(オリジナル)のスキンメッシュ頂点位置
+		glm::vec3 v_new = v;	// 更新後のスキンメッシュ頂点位置
 
-		//DualQuaternion dq_blend;
-		//if(n_joints == 0){
-		//	dq_blend = DualQuaternion(glm::quat(1, 0, 0, 0), glm::vec3(0, 0, 0));
-		//}
-		//else{
-		//	// 1つ目の間接の動きの処理
+		// TODO:この部分にDQSによる頂点位置の計算を書く
+		// ・変数v_newにスキンメッシュ頂点vのDQSによる更新後の位置を格納する
+		// ・LBSと違って4x4行列との掛け算はない(全て四元数との演算)ため，
+		//   こちらではglm::vec3として頂点座標を取り出していることに注意
+		// ・頂点vに対応するジョイント番号とその重みは以下のようにして取得できる
 		//	map<int, double>::const_iterator itr = weights[i].begin();
-		//	int bone = itr->first;
-		//	float wij = itr->second;
-		//	dq_blend = wij*m_joints[bone].dq_animated_trans;
-
-		//	glm::quat q0;	// 1つ目の間接の回転を表す四元数
-		//	q0 = m_joints[bone].dq_animated_trans.getRotation();
-
-		//	// 2つ目以降の間接の動きの処理(1つ目と回転方向が逆にならないようにする)
-		//	itr++;
 		//	for(; itr != weights[i].end(); ++itr){
-		//		bone = itr->first;
-		//		wij = itr->second;
-
-		//		DualQuaternion dq = (bone == -1) ? DualQuaternion(glm::quat(1, 0, 0, 0), glm::vec3(0, 0, 0)) : m_joints[bone].dq_animated_trans;
-		//		if(glm::dot(dq.getRotation(), q0) < 0.0){
-		//			wij *= -1.0;
-		//		}
-
-		//		dq_blend += wij*dq;
+		//		int j = itr->first;	// ジョイント番号
+		//		float wij = static_cast<float>(itr->second);	// 重み
+		//		// ここにジョイントjに関する処理を書く
+		//
 		//	}
+		// ・ジョイントjのrest(bind) poseでのワールド変換行列(スライドp28のBj)は
+		//    m_joints[j].B
+		//   に格納されており，回転を含むワールド変換行列(スライドp28のWj)は
+		//    m_joints[j].W
+		//   に格納されている(どちらもglm::mat4型)
+		// ・四元数や行列については授業スライドの最後の方の説明を参照すること
+		// ・Dual Quaternionを扱うための，DualQuaternion型を定義してある(dualquaternion.h)ので自由に使ってください．
+		//   基本的な演算は定義してありますが，頂点vのDual Quaternionによる変換は定義されていないので自分でここに実装してください．
 
-		//	glm::vec3 new_pos = dq_blend.transform(vrts[i]);
-		//	vrts[i] = new_pos;
-		//}
+		// ----課題ここから----
 
-		// 行列をDual Quaternionにその都度変換するだけのシンプルな例
+		// 行列をDual Quaternionにその都度変換するだけ
 		DualQuaternion dq_blend(glm::quat(0, 0, 0, 0), glm::quat(0, 0, 0, 0));
 		map<int, double>::const_iterator itr = weights[i].begin();
 		for(; itr != weights[i].end(); ++itr){
 			int bone = itr->first;
 			float wij = static_cast<float>(itr->second);
-			glm::mat4 Bj = m_joints[bone].global_trans;
-			glm::mat4 Wj = m_joints[bone].global_animated_trans;
+			glm::mat4 Bj = m_joints[bone].B;
+			glm::mat4 Wj = m_joints[bone].W;
 			glm::mat4 Tj = Wj*(glm::inverse(Bj));
 
-			DualQuaternion dq;
-			dq.setMat(Tj);
+			// 行列からの変換
+			glm::quat q_real(Tj);		// mat4から回転を表す四元数を取り出す
+			glm::vec3 v_trans(Tj[3]);	// mat4から平行移動ベクトルを取り出す
+			DualQuaternion dq(q_real, v_trans);
+
 			dq_blend += wij*dq;
 		}
+		dq_blend.normalize();
 
-		glm::vec3 new_pos = dq_blend.transform(vrts[i]);
-		vrts[i] = new_pos;
+		// Dual Quaternionで頂点vを回転するために平行移動量を取り出し
+		glm::quat q_trans = 2.0f*dq_blend.getTranslation()*glm::conjugate(dq_blend.getRotation());
+		glm::vec3 trans(q_trans.x, q_trans.y, q_trans.z);
+
+		// glmでの四元数(glm::quat)とベクトル(glm::vec3)の掛け算(*)はそのベクトルを四元数で回転させる(qvq*)
+		v_new = dq_blend.getRotation()*v+trans;
+
+
+		// ----課題ここまで----
+
+		vrts[i] = glm::vec3(v_new[0], v_new[1], v_new[2]);
 	}
 
 	return 1;
@@ -801,8 +928,8 @@ int CharacterAnimation::Skinning(int step, vector<glm::vec3> &vrts, const vector
 	switch(m_skinning){
 	default:
 	case 0:
-		return skinningLBS(step, vrts, weights);
+		return skinningLBS(vrts, weights);
 	case 1:
-		return skinningDQS(step, vrts, weights);
+		return skinningDQS(vrts, weights);
 	}
 }

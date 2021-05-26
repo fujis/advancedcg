@@ -743,17 +743,19 @@ void ElasticPBD::projectBendingConstraint(float ks)
 		float w4 = 1.0/m4;
 
 		// 分母項
-		float wq = w1*glm::length2(q1) + w2*glm::length2(q2) + w3*glm::length2(q3) + w4*glm::length2(q4);
-		if(wq < 1.0e-6) continue;
+		float wsum = w1+w2+w3+w4;
+		float qsum = glm::length2(q1) + glm::length2(q2) + glm::length2(q3) + glm::length2(q4);
+		if(qsum < 1.0e-6) continue;
 
 		// 位置修正量の計算
-		float lambda = sqrt(1.0f-d*d)*(phi-phi0)/wq;
+		float lambda = 4*sqrt(1.0f-d*d)*(phi-phi0)/(wsum*qsum);
 
 		dp1 = -w1*lambda*q1;
 		dp2 = -w2*lambda*q2;
 		dp3 = -w3*lambda*q3;
 		dp4 = -w4*lambda*q4;
 		// ----課題ここまで----
+
 
 
 		// 頂点位置を移動
@@ -817,11 +819,12 @@ void ElasticPBD::projectVolumeConstraint(float ks)
 		float w4 = 1.0/m4;
 
 		// 分母項
-		float wq = w1*glm::length2(q1) + w2*glm::length2(q2) + w3*glm::length2(q3) + w4*glm::length2(q4);
-		if(wq < 1.0e-6) continue;
+		float wsum = w1+w2+w3+w4;
+		float qsum = glm::length2(q1) + glm::length2(q2) + glm::length2(q3) + glm::length2(q4);
+		if(qsum < 1.0e-6) continue;
 
 		// 位置修正量の計算
-		float lambda = (V-V0)/wq;
+		float lambda = (V-V0)/(wsum*qsum);
 		dp1 = -w1*lambda*q1;
 		dp2 = -w2*lambda*q2;
 		dp3 = -w3*lambda*q3;

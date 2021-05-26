@@ -16,6 +16,7 @@
 //-----------------------------------------------------------------------------
 #include "utils.h"
 #include "dualquaternion.h"
+#include "rx_mesh.h"
 
 using namespace std;
 
@@ -48,12 +49,9 @@ public:
 	int index;				//!< 間接番号
 	int parent;				//!< 親ノードインデックス(-1で親なし)
 	vector<int> children;	//!< 子ノードインデックス
-	glm::vec3 offset;			//!< 間接位置(親ノードからのオフセット)
-	glm::mat4 global_trans;	//!< 間接位置のグローバル座標(ルート間接が原点)への変換行列(rest pose)
-	glm::mat4 global_animated_trans;	//!< 間接の移動を含む変換行列
-
-	DualQuaternion dq_trans;
-	DualQuaternion dq_animated_trans;
+	glm::vec3 offset;		//!< 間接位置(親ノードからのオフセット)
+	glm::mat4 B;			//!< 間接位置のグローバル座標(ルート間接が原点)への変換行列(rest pose)
+	glm::mat4 W;			//!< 間接の移動を含む変換行列
 
 	bool is_site;			//!< 末端ノードかどうかのフラグ
 	glm::vec3 site_offset;		//!< 末端位置(間接位置からのオフセット)
@@ -92,9 +90,9 @@ class CharacterAnimation
 	int m_frames;				//!< アニメーションフレーム数
 	float m_dt;					//!< アニメーションタイムステップ幅
 
-	// VAOs
-	Primitive m_sphere;			//!< 関節部分の球体
-	Primitive m_cylinder;		//!< ボーンを描画するための円筒
+	// スケルトン描画用メッシュ
+	rxPolygons m_sphere;		//!< 関節部分の球体
+	rxPolygons m_cylinder;		//!< ボーンを描画するための円筒
 
 public:
 	int m_skinning;				//!< スキニング方法
@@ -108,6 +106,7 @@ public:
 
 	// BVHファイル読み込み
 	bool Read(string file_name);
+	void CheckData(void);
 
 	// 描画＆情報取得
 	void Draw(int step, float scale = 1.0);
@@ -124,6 +123,8 @@ private:
 	// 描画
 	void drawJoint(const int joint_idx, float *motion, float scale = 1.0);
 	void drawCapsule(glm::vec3 pos0, glm::vec3 pos1);
+	void drawPolygon(rxPolygons &poly);
+
 
 	// 各間接姿勢への変換行列の計算
 	int calTransMatrices(int step, float scale);
@@ -135,8 +136,8 @@ private:
 	void calGlobalPos(const int joint_idx, glm::vec3 pos, vector<glm::vec3> &trans);
 
 	// スキニング
-	int skinningLBS(int step, vector<glm::vec3> &vrts, const vector< map<int, double> > &weights);
-	int skinningDQS(int step, vector<glm::vec3> &vrts, const vector< map<int, double> > &weights);
+	int skinningLBS(vector<glm::vec3> &vrts, const vector< map<int, double> > &weights);
+	int skinningDQS(vector<glm::vec3> &vrts, const vector< map<int, double> > &weights);
 };
 
 
