@@ -9,9 +9,8 @@
 
 
 #pragma comment(lib, "opengl32.lib")
-#pragma comment(lib, "glu32.lib")
 #pragma comment(lib, "glew32.lib")
-#pragma comment(lib, "glfw3.lib")
+#pragma comment(lib, "glfw3dll.lib")
 
 // コマンドプロンプトを出したくない場合はここをコメントアウト
 //#pragma comment(linker, "/subsystem:\"windows\" /entry:\"mainCRTStartup\"")
@@ -20,10 +19,13 @@
 //-----------------------------------------------------------------------------
 // インクルードファイル
 //-----------------------------------------------------------------------------
+#include <iostream>
+#include <GL/glew.h>
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
-#include "imgui_impl_opengl3.h"
-#include <stdio.h>
+#include "imgui_impl_opengl2.h"
+//#include "imgui_impl_opengl3.h"
+#include <GLFW/glfw3.h>
 
 #include "scene.h"
 
@@ -36,26 +38,25 @@
 using namespace std;
 
 // scene entries
-
 struct SceneEntry
 {
 	std::string name;
-	void (*Init)(int argc, char* argv[]);
-	void (*Draw)();
-	void (*Timer)();
-	void (*Cursor)(GLFWwindow* window, double xpos, double ypos);
-	void (*Mouse)(GLFWwindow* window, int button, int action, int mods);
-	void (*Keyboard)(GLFWwindow* window, int key, int mods);
-	void (*Resize)(GLFWwindow* window, int w, int h);
-	void (*ImGui)(GLFWwindow* window);
-	void (*Destroy)();
+	void(*Init)(int argc, char* argv[]);
+	void(*Draw)();
+	void(*Timer)();
+	void(*Cursor)(GLFWwindow* window, double xpos, double ypos);
+	void(*Mouse)(GLFWwindow* window, int button, int action, int mods);
+	void(*Keyboard)(GLFWwindow* window, int key, int mods);
+	void(*Resize)(GLFWwindow* window, int w, int h);
+	void(*ImGui)(GLFWwindow* window);
+	void(*Destroy)();
 };
 
-#define SceneRegister(name, className) { name, className ## ::Init, className ## ::Draw, className ## ::Timer, className ## ::Cursor, className ## ::Mouse, \
-										 className ## ::Keyboard, className ## ::Resize, className ## ::ImGui, className ## ::Destroy }
+#define SceneRegister(name, className) { name, (className::Init), (className::Draw), (className::Timer), (className::Cursor), (className::Mouse), \
+										 (className::Keyboard), (className::Resize), (className::ImGui), (className::Destroy) }
 
 SceneEntry g_SceneEntries[] = {
-	SceneRegister("Scene 5-1: MLS deformation", SceneMLS)
+	SceneRegister("Scene 8: SWE wave simulation", SceneSWE)
 };
 
 #undef SceneRegister
@@ -113,25 +114,36 @@ int main(int argc, char *argv[])
 {
 	int winw = 1024, winh = 1024, winx = 100, winy = 100;
 
-	// 画像保存用ディレクトリ作成
-	MkDir("result/images");
-
-	// Setup window
-	glfwSetErrorCallback(glfw_error_callback);
 	if(!glfwInit()) return 1;
+	glfwSetErrorCallback(glfw_error_callback);
 
-	// GL 3.0 + GLSL 130
-	const char* glsl_version = "#version 130";
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
+#ifdef __APPLE__
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
+	//glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+	//glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
+	//glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
+	//glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+	//glfwWindowHint(GLFW_COCOA_RETINA_FRAMEBUFFER, GLFW_FALSE);
+#endif
 
 	// Create window with graphics context
-	GLFWwindow* window = glfwCreateWindow(winw, winh, "Advanced CG 08: Assignments", NULL, NULL);
+	GLFWwindow* window = glfwCreateWindow(winw, winh, "Advanced CG 06: Assignments", NULL, NULL);
 	if(window == NULL) return 1;
 
 	glfwMakeContextCurrent(window);
-	glfwSwapInterval(0); // Enable vsync
+	glewExperimental = GL_TRUE;
+	glfwSwapInterval(0); // Disable vsync
 
+	cout << "OpenGL version: " << glGetString(GL_VERSION) << endl;
+	cout << "GLSL version: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << endl;
+	cout << "Vendor: " << glGetString(GL_VENDOR) << endl;
+	cout << "Renderer: " << glGetString(GL_RENDERER) << endl;
+
+	for(int i = 0; i < g_NumSceneEntries; i++)
+		g_SceneEntries[i].Init(argc, argv);
+
+	// Setup callback functions
 	glfwSetCursorPosCallback(window, cursorPosCallback);
 	glfwSetMouseButtonCallback(window, mouseButtonCallback);
 	glfwSetKeyCallback(window, keyboardCallback);
@@ -141,9 +153,6 @@ int main(int argc, char *argv[])
 	// Setup Dear ImGui context
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
-	ImGuiIO& io = ImGui::GetIO(); (void)io;
-	//io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
-	//io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
 
 	// Setup Dear ImGui style
 	ImGui::StyleColorsDark();
@@ -151,15 +160,13 @@ int main(int argc, char *argv[])
 
 	// Setup Platform/Renderer backends
 	ImGui_ImplGlfw_InitForOpenGL(window, true);
-	ImGui_ImplOpenGL3_Init(glsl_version);
+	ImGui_ImplOpenGL2_Init();
+	//ImGui_ImplOpenGL3_Init();
 
-	// Our state
-	bool show_demo_window = true;
-	bool show_another_window = false;
-	ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
-
-	for(int i = 0; i < g_NumSceneEntries; i++)
-		g_SceneEntries[i].Init(argc, argv);
+	// Settings for timer
+	float dt = g_dt;	// 1.0/FPS
+	float cur_time = 0.0f, last_time = 0.0f, elapsed_time = 0.0f;
+	glfwSetTime(0.0);	// Initialize the glfw timer
 
 	// Main loop
 	while(!glfwWindowShouldClose(window))
@@ -167,8 +174,21 @@ int main(int argc, char *argv[])
 		// Poll and handle events (inputs, window resize, etc.)
 		glfwPollEvents();
 
-		// Start the Dear ImGui frame
-		ImGui_ImplOpenGL3_NewFrame();
+		// OpenGL Rendering & Animation function
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		g_SceneEntries[g_SceneIndex].Draw();
+
+		// Timer
+		cur_time = glfwGetTime();
+		elapsed_time = cur_time-last_time;
+		if(elapsed_time >= dt){
+			g_SceneEntries[g_SceneIndex].Timer();
+			last_time = glfwGetTime();
+		}
+
+		// Start the ImGui frame
+		ImGui_ImplOpenGL2_NewFrame();
+		//ImGui_ImplOpenGL3_NewFrame();
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
 
@@ -188,20 +208,18 @@ int main(int argc, char *argv[])
 		g_SceneEntries[g_SceneIndex].ImGui(window);
 		ImGui::End();
 
-		// Rendering
+		// Rendering of the ImGUI frame in opengl canvas
 		ImGui::Render();
-		g_SceneEntries[g_SceneIndex].Draw();
-		g_SceneEntries[g_SceneIndex].Timer();
-		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+		ImGui_ImplOpenGL2_RenderDrawData(ImGui::GetDrawData());
+		//ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
 		glfwSwapBuffers(window);
 	}
 
-	for(int i = 0; i < g_NumSceneEntries; i++)
-		g_SceneEntries[i].Destroy();
-
 	// Cleanup
-	ImGui_ImplOpenGL3_Shutdown();
+	for(int i = 0; i < g_NumSceneEntries; i++) g_SceneEntries[i].Destroy();
+	ImGui_ImplOpenGL2_Shutdown();
+	//ImGui_ImplOpenGL3_Shutdown();
 	ImGui_ImplGlfw_Shutdown();
 	ImGui::DestroyContext();
 

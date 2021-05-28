@@ -297,7 +297,7 @@ void ScenePBD::ImGui(GLFWwindow* window)
 	ImGui::Text("menu:");
 
 	if(ImGui::Button("start/stop")){ switchanimation(-1); }
-	if(ImGui::Button("run a step")){ Timer(); }
+	if(ImGui::Button("run a step")){ m_animation_on = true; Timer(); m_animation_on = false; }
 	if(ImGui::Button("reset viewpos")){ resetview(); }
 	if(ImGui::Button("save screenshot")){ savedisplay(-1); }
 	ImGui::Separator();
@@ -325,6 +325,7 @@ void ScenePBD::ImGui(GLFWwindow* window)
 
 void ScenePBD::Destroy()
 {
+	if(m_elasticbody) delete m_elasticbody;
 }
 
 

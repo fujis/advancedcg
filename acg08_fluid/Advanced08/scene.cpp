@@ -21,15 +21,8 @@
 #include "rx_texture.h"
 #include "rx_bitmap.h"
 
-// 3Dモデル
-#include "rx_model_sa.h"
-
-// マウスピック
-#include "rx_pick.h"
-
 // OpenGL描画関連
 #include "rx_trackball.h"	// 視点変更用トラックボールクラス
-#include "rx_gldraw.h"		// 各種OpenGL描画関数
 #include "rx_shaders.h"		// GLSL関数
 
 
@@ -46,57 +39,43 @@ const GLfloat RX_FOV = 45.0f;
 
 
 //-----------------------------------------------------------------------------
-// SceneMLSクラスのstatic変数の定義と初期化
+// SceneSWEクラスのstatic変数の定義と初期化
 //-----------------------------------------------------------------------------
-int SceneMLS::m_winid = 0;						//!< GLUTのウインドウID
-int SceneMLS::m_winw = 1000;					//!< 描画ウィンドウの幅
-int SceneMLS::m_winh = 1000;					//!< 描画ウィンドウの高さ
-int SceneMLS::m_mousebutton = 0;				//!< マウスボタンの状態
-int SceneMLS::m_keymod;							//!< 修飾キーの状態
-rxTrackball SceneMLS::m_view;					//!< トラックボール
-double SceneMLS::m_bgcolor[3] = { 1, 1, 1 };	//!< 背景色
-bool SceneMLS::m_animation_on = false;			//!< アニメーションON/OFF
-bool SceneMLS::m_fullscreen_on = false;			//!< フルスクリーンON/OFF
+int SceneSWE::m_winw = 1000;					//!< 描画ウィンドウの幅
+int SceneSWE::m_winh = 1000;					//!< 描画ウィンドウの高さ
+rxTrackball SceneSWE::m_view;					//!< トラックボール
+float SceneSWE::m_bgcolor[3] = { 1, 1, 1 };	//!< 背景色
+bool SceneSWE::m_animation_on = false;			//!< アニメーションON/OFF
 
-int SceneMLS::m_currentstep = 0;				//!< 現在のステップ数
-bool SceneMLS::m_pause = false;					//!< シミュレーションのポーズフラグ
+int SceneSWE::m_draw = 0;						//!< 描画フラグ
+int SceneSWE::m_currentstep = 0;				//!< 現在のステップ数
+int SceneSWE::m_simg_spacing = -1;				//!< 画像保存間隔(=-1なら保存しない)
 
-int SceneMLS::m_draw = 0;						//!< 描画フラグ
-		
-int SceneMLS::m_simg_spacing = -1;				//!< 画像保存間隔(=-1なら保存しない)
+int SceneSWE::m_picked = -1;
+float SceneSWE::m_pickdist = 1.0;	//!< ピックされた点までの距離
 
-rxWave* SceneMLS::m_wave = 0;
-double SceneMLS::m_dt = 0.01;	//!< 時間ステップ幅
-
-int SceneMLS::m_view_drag = 0;
-
-rxPolygonsE SceneMLS::m_poly_org;
-rxPolygonsE SceneMLS::m_poly;
-GLuint SceneMLS::m_tex = 0;
+WaveSWE* SceneSWE::m_wave = 0;
+float SceneSWE::m_scale = 4.0;
+int SceneSWE::m_res = 64;
 
 
 
-void SceneMLS::Init(int argc, char* argv[])
+void SceneSWE::Init(int argc, char* argv[])
 {
-	// OpenGLのバージョンとGLEWの初期化
-	RXCOUT << "OpenGL Ver. " << glGetString(GL_VERSION) << endl;
+	// GLEWの初期化
 	GLenum err = glewInit();
-	if(err == GLEW_OK) RXCOUT << "GLEW OK : Glew Ver. " << glewGetString(GLEW_VERSION) << endl;
-	else RXCOUT << "GLEW Error : " << glewGetErrorString(err) << endl;
+	if(err != GLEW_OK) cout << "GLEW Error : " << glewGetErrorString(err) << endl;
 
 	// マルチサンプル設定の確認
-	GLint buf, sbuf;
-	glGetIntegerv(GL_SAMPLE_BUFFERS, &buf);
-	RXCOUT << "number of sample buffers is " << buf << endl;
-	glGetIntegerv(GL_SAMPLES, &sbuf);
-	RXCOUT << "number of samples is " << sbuf << endl;
-
-	m_mousebutton = 0;
+	//GLint buf, sbuf;
+	//glGetIntegerv(GL_SAMPLE_BUFFERS, &buf);
+	//cout << "number of sample buffers is " << buf << endl;
+	//glGetIntegerv(GL_SAMPLES, &sbuf);
+	//cout << "number of samples is " << sbuf << endl;
+	glEnable(GL_MULTISAMPLE);
 
 	glEnable(GL_DEPTH_TEST);
 	glDisable(GL_CULL_FACE);
-
-	glEnable(GL_MULTISAMPLE);
 
 	glEnable(GL_AUTO_NORMAL);
 	glEnable(GL_NORMALIZE);
@@ -116,36 +95,30 @@ void SceneMLS::Init(int argc, char* argv[])
 	glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
 	glEnable(GL_COLOR_MATERIAL);
 
-	// テクスチャ
-	//loadTexture("sample.bmp", m_tex, false, false);
-
-	// トラックボール初期姿勢
-	m_view.SetTranslation(0, 0);
-	m_view.SetScaling(-5);
+	// 視点初期化
+	resetview();
 
 	// 描画フラグ初期化
 	m_draw = 0;
 	m_draw |= RXD_EDGE;
-	//m_draw |= RXD_BBOX;
+	m_draw |= RXD_FACE;
+	m_draw |= RXD_BBOX;
 
-	// 波クラス生成
-	int n = 64;
-	double scale = 4.0;
-	double water_depth = 0.1;
-	m_wave = new rxWave(n, scale, water_depth);
-
+	// 波の初期化
+	initWave();
 }
 
 
 /*!
  * 再描画イベント処理関数
  */
-void SceneMLS::Draw(void)
+void SceneSWE::Draw(void)
 {
 	// ビューポート,透視変換行列,モデルビュー変換行列の設定
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
-	gluPerspective(RX_FOV, (float)m_winw/(float)m_winh, 0.2f, 1000.0f);
+	glm::mat4 mp = glm::perspective(RX_FOV, (float)m_winw/m_winh, 0.2f, 1000.0f);
+	glMultMatrixf(glm::value_ptr(mp));
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
 
@@ -159,16 +132,19 @@ void SceneMLS::Draw(void)
 	// マウスによる回転・平行移動の適用
 	m_view.Apply();
 
-	// 各種シミュレーションデータの取得
-	Vec3 cen(0.0), dim(2.0);			// シミュレーション空間情報
+	// シミュレーション空間情報
+	glm::vec3 cen(0.0), dim(2.0);
+	if(m_wave) m_wave->GetDim(cen, dim);
 
 	// 床描画
 	glEnable(GL_LIGHTING);
-	if(m_draw & RXD_FLOOR) drawFloor(Vec3f(RX_LIGHT0_POS), Vec3f(RX_LIGHT_DIFF), cen[1]-0.5*dim[1], 30.0);
+	glm::vec3 lightpos(RX_LIGHT0_POS[0], RX_LIGHT0_POS[1], RX_LIGHT0_POS[2]);
+	glm::vec3 lightcol(RX_LIGHT_DIFF[0], RX_LIGHT_DIFF[1], RX_LIGHT_DIFF[2]);
+	if(m_draw & RXD_FLOOR) drawFloor(lightpos, lightcol, cen[1]-0.5*dim[1], 30.0);
 
 	// 境界,軸描画
 	glDisable(GL_LIGHTING);
-	if(m_draw & RXD_BBOX) drawWireCuboid(cen-0.5*dim, cen+0.5*dim, Vec3(0.5, 1.0, 0.5), 2.0);
+	if(m_draw & RXD_BBOX) drawWireCuboid(cen-0.5f*dim, cen+0.5f*dim, glm::vec3(0.5, 1.0, 0.5), 2.0);
 	if(m_draw & RXD_AXIS) drawAxis(0.6*dim[0], 3.0);
 
 	// オブジェクト描画
@@ -181,11 +157,6 @@ void SceneMLS::Draw(void)
 	glColor3d(0.0, 0.5, 1.0);
 	if(m_wave) m_wave->Draw(m_draw);
 
-
-	// メッシュ描画
-	//if(m_draw & RXD_MESH) m_poly.Draw(4);
-
-
 	glPopMatrix();
 
 	glPopMatrix();
@@ -194,16 +165,16 @@ void SceneMLS::Draw(void)
 /*!
  * タイマーコールバック関数
  */
-void SceneMLS::Timer(void)
+void SceneSWE::Timer(void)
 {
 	if(m_animation_on){
 		// 描画を画像ファイルとして保存
 		if(m_simg_spacing > 0 && m_currentstep%m_simg_spacing == 0) savedisplay(-1);
 
 		// シミュレーションステップを進める
-		if(m_wave) m_wave->Update(m_dt);
+		if(m_wave) m_wave->Update(m_currentstep, g_dt);
 
-		if(m_currentstep > RX_MAX_STEPS) m_currentstep = 0;
+		if(m_currentstep > MAX_STEPS) m_currentstep = 0;
 		m_currentstep++;
 	}
 }
@@ -216,28 +187,43 @@ void SceneMLS::Timer(void)
  * @param[in] action マウスボタンの状態(GLFW_PRESS, GLFW_RELEASE)
  * @param[in] mods 修飾キー(CTRL,SHIFT,ALT) -> https://www.glfw.org/docs/latest/group__mods.html
  */
-void SceneMLS::Mouse(GLFWwindow* window, int button, int action, int mods)
+void SceneSWE::Mouse(GLFWwindow* window, int button, int action, int mods)
 {
 	double x, y;
 	glfwGetCursorPos(window, &x, &y);
-	Vec2 mpos(x/(double)m_winw, (m_winh-y-1.0)/(double)m_winh);
+	glm::vec2 mpos(x/(float)m_winw, (m_winh-y-1.0)/(float)m_winh);
 
 	if(button == GLFW_MOUSE_BUTTON_LEFT){
 		if(action == GLFW_PRESS){
 			// マウスピック
-			rxGLPick pick;
-			pick.Set(SceneMLS::RenderSceneForPick, 0, SceneMLS::ProjectionForPick, 0);
-			int idx = pick.Pick(x, y);
-			if(m_wave) m_wave->AddHeight(idx, 0.15);
-			if(idx == -1){
+			if(m_wave && !(mods & 0x02)){
+				// マウスクリックした方向のレイ
+				glm::vec3 ray_from, ray_to;
+				glm::vec3 init_pos = glm::vec3(0.0);
+				m_view.CalLocalPos(ray_from, init_pos);
+				m_view.GetRayTo(x, y, RX_FOV, ray_to);
+				glm::vec3 dir = glm::normalize(ray_to-ray_from);	// 視点からマウス位置へのベクトル
+
+				// レイと各頂点(球)の交差判定
+				float d;
+				int v = m_wave->IntersectRay(ray_from, dir, d);
+				if(v >= 0){
+					//cout << "vertex " << v << " is selected - " << d << endl;
+					m_picked = v;
+					m_pickdist = d;
+					m_wave->AddHeightArea(m_picked, 0.2);
+				}
+			}
+
+			if(m_picked == -1){
 				// マウスドラッグによる視点移動
 				m_view.Start(x, y, mods);
-				m_view_drag = 1;
 			}
+
 		}
 		else if(action == GLFW_RELEASE){
 			m_view.Stop(x, y);
-			m_view_drag = 0;
+			m_picked = -1;
 		}
 	}
 }
@@ -245,7 +231,7 @@ void SceneMLS::Mouse(GLFWwindow* window, int button, int action, int mods)
  * モーションイベント処理関数(マウスボタンを押したままドラッグ)
  * @param[in] x,y マウス座標(スクリーン座標系)
  */
-void SceneMLS::Cursor(GLFWwindow* window, double x, double y)
+void SceneSWE::Cursor(GLFWwindow* window, double x, double y)
 {
 	if(glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_RELEASE && 
 	   glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_MIDDLE) == GLFW_RELEASE &&
@@ -254,14 +240,25 @@ void SceneMLS::Cursor(GLFWwindow* window, double x, double y)
 	}
 
 	if(glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS){
-		if(m_view_drag){
+		if(m_picked == -1){
 			m_view.Motion(x, y);
 		}
 		else{
-			rxGLPick pick;
-			pick.Set(SceneMLS::RenderSceneForPick, 0, SceneMLS::ProjectionForPick, 0);
-			int idx = pick.Pick(x, y);
-			if(m_wave) m_wave->AddHeight(idx, 0.15);
+			if(m_wave){
+				glm::vec3 ray_from, ray_to;
+				glm::vec3 init_pos = glm::vec3(0.0);
+				m_view.CalLocalPos(ray_from, init_pos);
+				m_view.GetRayTo(x, y, RX_FOV, ray_to);
+				glm::vec3 dir = glm::normalize(ray_to-ray_from);	// 視点からマウス位置へのベクトル
+
+				float d;
+				int v = m_wave->IntersectRay(ray_from, dir, d);
+				if(v >= 0){
+					m_picked = v;
+					m_pickdist = d;
+					m_wave->AddHeightArea(m_picked, 0.2);
+				}
+			}
 		}
 	}
 }
@@ -271,7 +268,7 @@ void SceneMLS::Cursor(GLFWwindow* window, double x, double y)
  * @param[in] key キーの種類 -> https://www.glfw.org/docs/latest/group__keys.html
  * @param[in] mods 修飾キー(CTRL,SHIFT,ALT) -> https://www.glfw.org/docs/latest/group__mods.html
  */
-void SceneMLS::Keyboard(GLFWwindow* window, int key, int mods)
+void SceneSWE::Keyboard(GLFWwindow* window, int key, int mods)
 {
 	switch(key){
 	case GLFW_KEY_S: // デバッグ用
@@ -289,7 +286,7 @@ void SceneMLS::Keyboard(GLFWwindow* window, int key, int mods)
  * @param[in] w キャンバス幅(ピクセル数)
  * @param[in] h キャンバス高さ(ピクセル数)
  */
-void SceneMLS::Resize(GLFWwindow* window, int w, int h)
+void SceneSWE::Resize(GLFWwindow* window, int w, int h)
 {
 	m_winw = w; m_winh = h;
 	m_view.SetRegion(w, h);
@@ -299,20 +296,14 @@ void SceneMLS::Resize(GLFWwindow* window, int w, int h)
 /*!
  * ImGUIのウィジット配置
  */
-void SceneMLS::ImGui(GLFWwindow* window)
+void SceneSWE::ImGui(GLFWwindow* window)
 {
 	ImGui::Text("menu:");
 
 	if(ImGui::Button("start/stop")){ switchanimation(-1); }
-	if(ImGui::Button("run a step")){ Timer(); }
+	if(ImGui::Button("run a step")){ m_animation_on = true; Timer(); m_animation_on = false; }
 	if(ImGui::Button("reset viewpos")){ resetview(); }
 	if(ImGui::Button("save screenshot")){ savedisplay(-1); }
-	if(ImGui::Button("save mesh")){
-		if(m_wave){
-			rxPolygons &p = m_wave->GetMesh();
-			RxModel::SaveOBJ("wave.obj", p);
-		}
-	}
 	ImGui::Separator();
 	ImGui::CheckboxFlags("vertex", &m_draw, RXD_VERTEX);
 	ImGui::CheckboxFlags("edge", &m_draw, RXD_EDGE);
@@ -321,25 +312,35 @@ void SceneMLS::ImGui(GLFWwindow* window)
 	ImGui::CheckboxFlags("axis", &m_draw, RXD_AXIS);
 	ImGui::CheckboxFlags("floor", &m_draw, RXD_FLOOR);
 	ImGui::Separator();
-	if(ImGui::Button("reset simulation")){ if(m_wave) m_wave->Init(); }
+	if(ImGui::Button("flat")){ initWave(); }
+	if(ImGui::Button("slope")){ initWaveSlope(); }
+	if(ImGui::Button("mountain")){ initWaveMountain(); }
+	if(m_wave){
+		ImGui::Separator();
+		ImGui::Checkbox("sine-wave", &(m_wave->m_surf));
+		ImGui::InputFloat("viscosity", &(m_wave->m_nu), 0.001f, 0.01f, "%.4f");
+	}
+	ImGui::Separator();
+	ImGui::Text("scene parameters:");
+	ImGui::InputInt("resolution", &(m_res), 4, 16);
+	ImGui::InputFloat("scale", &(m_scale), 0.1f, 1.0f, "%.1f");
+	ImGui::InputFloat("dt", &(g_dt), 0.001f, 0.01f, "%.3f");
 	ImGui::Separator();
 	if(ImGui::Button("quit")){ glfwSetWindowShouldClose(window, GLFW_FALSE); }
 
 }
 
-void SceneMLS::Destroy()
+void SceneSWE::Destroy()
 {
 	if(m_wave) delete m_wave;
 }
-
-
 
 
 /*!
  * アニメーションN/OFF
  * @param[in] on trueでON, falseでOFF
  */
-bool SceneMLS::switchanimation(int on)
+bool SceneSWE::switchanimation(int on)
 {
 	m_animation_on = (on == -1) ? !m_animation_on : (on ? true : false);
 	return m_animation_on;
@@ -349,10 +350,10 @@ bool SceneMLS::switchanimation(int on)
  * 現在の画面描画を画像ファイルとして保存(連番)
  * @param[in] stp 現在のステップ数(ファイル名として使用)
  */
-void SceneMLS::savedisplay(const int &stp)
+void SceneSWE::savedisplay(const int &stp)
 {
 	static int nsave = 1;
-	string fn = CreateFileName(RX_DEFAULT_IMAGE_DIR+"pbf_", ".bmp", (stp == -1 ? nsave++ : stp), 5);
+	string fn = CreateFileName("img_", ".bmp", (stp == -1 ? nsave++ : stp), 5);
 	saveFrameBuffer(fn, m_winw, m_winh);
 	std::cout << "saved the screen image to " << fn << std::endl;
 }
@@ -360,48 +361,59 @@ void SceneMLS::savedisplay(const int &stp)
 /*!
  * 視点の初期化
  */
-void SceneMLS::resetview(void)
+void SceneSWE::resetview(void)
 {
 	double q[4] = { 1, 0, 0, 0 };
 	m_view.SetQuaternion(q);
+	m_view.SetRotation(20.0, 1.0, 0.0, 0.0);
 	m_view.SetScaling(-5.0);
 	m_view.SetTranslation(0.0, 0.0);
 }
 
 
 
-
-
-/*!
- * 画面出力用の文字列の生成
- * @return 文字列
- */
-vector<string> SceneMLS::setDrawString(void)
+//! 底面の高さを返す関数
+//  - x,yの範囲は(0,0)-(m_scale,m_scale)
+float SceneSWE::getHeightFlat(float x, float y){ return -0.8; }
+float SceneSWE::getHeightSlope(float x, float y){ return (0.05*x-0.1)*m_scale-0.8; }
+float SceneSWE::getHeightMountain(float x, float y)
 {
-	vector<string> str;
-
-	// 計測された計算時間
-	str.push_back("time : ");
-	string tstr;
-	RXTIMER_STRING(tstr);
-	divideString(tstr, str);
-
-	return str;
+	x /= m_scale; y /= m_scale;
+	return 0.5*exp(-((x-0.5)*(x-0.5)+(y-0.5)*(y-0.5))/(2.0*0.1*0.1))-1.0;
 }
 
 /*!
- * マウスピック用の描画関数
+ * 底面がフラットな波のシーン生成
  */
-void SceneMLS::RenderSceneForPick(void* x)
+void SceneSWE::initWave(void)
 {
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	glPushMatrix();
-	m_view.Apply();	// マウスによる回転・平行移動の適用
-	if(m_wave) m_wave->DrawForPick();
-	glPopMatrix();
+	// 波クラス生成
+	if(m_wave) delete m_wave;
+	m_wave = new WaveSWE;
+
+	m_wave->Init(m_res, m_scale, getHeightFlat);
 }
-void SceneMLS::ProjectionForPick(void* x)
+
+/*!
+ * 底面がフラットな波のシーン生成
+ */
+void SceneSWE::initWaveSlope(void)
 {
-	gluPerspective(RX_FOV, (float)m_winw/(float)m_winh, 0.2f, 1000.0f);
+	// 波クラス生成
+	if(m_wave) delete m_wave;
+	m_wave = new WaveSWE;
+
+	m_wave->Init(m_res, m_scale, getHeightSlope);
+
 }
+
+void SceneSWE::initWaveMountain(void)
+{
+	// 波クラス生成
+	if(m_wave) delete m_wave;
+	m_wave = new WaveSWE;
+
+	m_wave->Init(m_res, m_scale, getHeightMountain);
+}
+
 

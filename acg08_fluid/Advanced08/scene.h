@@ -37,18 +37,18 @@ using namespace std;
 //-----------------------------------------------------------------------------
 #define RX_OUTPUT_TIME
 
-const string RX_PROGRAM_NAME = "acg";
-const int RX_MAX_STEPS = 1000000;
+const int MAX_STEPS = 1000000;
 
 // 描画フラグ
-static int RXD_VERTEX = 0x0001;	//!< 頂点描画
-static int RXD_EDGE = 0x0002;	//!< エッジ描画
-static int RXD_FACE = 0x0004;	//!< 面描画
-static int RXD_NORMAL = 0x0008;	//!< 法線描画
-static int RXD_BBOX = 0x0010;	//!< AABB(シミュレーション空間)
-static int RXD_AXIS = 0x0020;   //!< 軸
-static int RXD_FLOOR = 0x0040;	//!< 床
+const int RXD_VERTEX = 0x0001;	//!< 頂点描画
+const int RXD_EDGE = 0x0002;	//!< エッジ描画
+const int RXD_FACE = 0x0004;	//!< 面描画
 
+const int RXD_BBOX = 0x0010;	//!< AABB(シミュレーション空間)
+const int RXD_AXIS = 0x0020;   //!< 軸
+const int RXD_FLOOR = 0x0040;	//!< 床
+
+static float g_dt = 0.002;	//!< 時間ステップ幅
 
 
 //-----------------------------------------------------------------------------
@@ -56,48 +56,37 @@ static int RXD_FLOOR = 0x0040;	//!< 床
 //   - GLUT(freeglut)によるアプリケーション全体のコントローラ
 //   - GUI関係の処理全般を行う(イベントハンドラ全般)
 //-----------------------------------------------------------------------------
-class SceneMLS
+class SceneSWE
 {
 protected:
-	static int m_winid;						//!< GLUTのウインドウID
 	static int m_winw;						//!< 描画ウィンドウの幅
 	static int m_winh;						//!< 描画ウィンドウの高さ
-	static int m_mousebutton;				//!< マウスボタンの状態
-	static int m_keymod;					//!< 修飾キーの状態
 	static rxTrackball m_view;				//!< トラックボール
 
-	static double m_bgcolor[3];				//!< 背景色
+	static float m_bgcolor[3];				//!< 背景色
 	static bool m_animation_on;				//!< アニメーションON/OFF
-	static bool m_fullscreen_on;			//!< フルスクリーンON/OFF
 
+	static int m_draw;						//!< 描画フラグ
 	static int m_currentstep;				//!< 現在のステップ数
-	static bool m_pause;					//!< シミュレーションのポーズフラグ
+	static int m_simg_spacing;				//!< 画像保存間隔(=-1なら保存しない)
+
+	//! マウスピック
+	static int m_picked;
+	static float m_pickdist;	//!< ピックされた点までの距離
 
 	// ハイトフィールド
-	static rxWave *m_wave;
-	static double m_dt;	//!< 時間ステップ幅
+	static WaveSWE *m_wave;
 
-	static int m_view_drag;
-
-	// メッシュ
-	static rxPolygonsE m_poly_org;
-	static rxPolygonsE m_poly;
-	static GLuint m_tex;
-
-
-public:
-	// 描画フラグ
-	static int m_draw;						//!< 描画フラグ
-
-	// 画像出力
-	static int m_simg_spacing;		//!< 画像保存間隔(=-1なら保存しない)
+	// シーンパラメータ
+	static float m_scale;
+	static int m_res;
 
 public:
 	//! コンストラクタ
-	SceneMLS(){}
+	SceneSWE(){}
 
 	//! デストラクタ
-	~SceneMLS(){}
+	~SceneSWE(){}
 
 public:
 	// コールバック関数
@@ -112,6 +101,16 @@ public:
 	static void Destroy();
 
 private:
+	// 波の初期化
+	static void initWave(void);
+	static void initWaveSlope(void);
+	static void initWaveMountain(void);
+
+	static float getHeightFlat(float x, float y);
+	static float getHeightSlope(float x, float y);
+	static float getHeightMountain(float x, float y);
+
+private:
 	// アニメーション切り替え
 	static bool switchanimation(int on);
 
@@ -120,14 +119,6 @@ private:
 
 	// 視点
 	static void resetview(void);
-
-	// 描画関係
-	static vector<string> setDrawString(void);
-
-public:
-	// マウスピック用描画
-	static void RenderSceneForPick(void* x = 0);
-	static void ProjectionForPick(void* x = 0);
 };
 
 

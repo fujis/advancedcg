@@ -14,7 +14,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectName>Advanced06Assignment</ProjectName>
+    <ProjectName>Advanced07Assignment</ProjectName>
     <ProjectGuid>{F5962D82-BAB7-4A23-A541-E7658FD0C781}</ProjectGuid>
     <RootNamespace>rx_fltk_pvsph</RootNamespace>
     <Keyword>Win32Proj</Keyword>
@@ -152,8 +152,8 @@
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="characteranimation.cpp" />
     <ClCompile Include="imgui\imgui_impl_opengl2.cpp" />
-    <ClCompile Include="pbd.cpp" />
     <ClCompile Include="scene.cpp" />
     <ClCompile Include="imgui\imgui.cpp" />
     <ClCompile Include="imgui\imgui_demo.cpp" />
@@ -165,9 +165,10 @@
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="characteranimation.h" />
+    <ClInclude Include="dualquaternion.h" />
     <ClInclude Include="imgui\imgui_impl_opengl2.h" />
     <ClInclude Include="msh.h" />
-    <ClInclude Include="pbd.h" />
     <ClInclude Include="scene.h" />
     <ClInclude Include="imgui\imconfig.h" />
     <ClInclude Include="imgui\imgui.h" />
