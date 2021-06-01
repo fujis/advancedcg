@@ -754,6 +754,12 @@ void ElasticPBD::projectBendingConstraint(float ks)
 		dp2 = -w2*lambda*q2;
 		dp3 = -w3*lambda*q3;
 		dp4 = -w4*lambda*q4;
+
+		//------------------------------
+
+		//------------------------------
+
+
 		// ----課題ここまで----
 
 

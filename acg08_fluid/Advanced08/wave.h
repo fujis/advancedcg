@@ -46,6 +46,7 @@ class WaveSWE
 
 	float m_gravity;				//!< 重力
 	float m_dx, m_dy;				//!< グリッド幅
+	float m_avg_h;					//!< 平均高さ
 
 	float(*m_ground)(float, float);	//!< 水底の高さを返す関数
 public:
@@ -96,7 +97,7 @@ protected:
 	//! SWEによるハイトフィールドの更新
 	void advection(float *d_new, float *d, float *u_new, float *v_new, float *u, float *v, float dt);
 	void pressure(float *d_new, float *d, float *u_new, float *v_new, float *u, float *v, float dt);
-	void viscosity(float *u, float *v, float dt);
+	void viscosity(float *u_new, float *v_new, float *u, float *v, float dt);
 
 	//! 水深と地形の高さから水面の高さを更新
 	void updateHeight(float *d);
@@ -107,6 +108,10 @@ protected:
 
 	//! 打ち寄せる波の生成
 	void makeSurf(float t, float *h, float wave_height);
+
+	//! 平均高さの算出
+	double calAvarageHeight(void);
+
 };
 
 

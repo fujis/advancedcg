@@ -1,10 +1,10 @@
 /*!
-  @file rx_controller.h
-	
-  @brief GLUTによるOpenGLウィンドウクラス
- 
-  @author Makoto Fujisawa 
-  @date   2020-06
+  @file scene.h
+
+  @brief GLFWによるOpenGL描画
+
+  @author Makoto Fujisawa
+  @date   2021-04
 */
 
 #ifndef _RX_CONTROLLER_H_
@@ -52,8 +52,8 @@ static float g_dt = 0.002;	//!< 時間ステップ幅
 
 
 //-----------------------------------------------------------------------------
-//! rxControllerクラス
-//   - GLUT(freeglut)によるアプリケーション全体のコントローラ
+//! SceneSWEクラス
+//   - SWEによる波シミュレーション
 //   - GUI関係の処理全般を行う(イベントハンドラ全般)
 //-----------------------------------------------------------------------------
 class SceneSWE
@@ -71,8 +71,8 @@ protected:
 	static int m_simg_spacing;				//!< 画像保存間隔(=-1なら保存しない)
 
 	//! マウスピック
-	static int m_picked;
-	static float m_pickdist;	//!< ピックされた点までの距離
+	static int m_picked;					//!< ピックされたグリッドセル番号
+	static float m_pickdist;				//!< ピックされた点までの距離
 
 	// ハイトフィールド
 	static WaveSWE *m_wave;

@@ -1,12 +1,12 @@
 /*!
-  @file rx_controller.cpp
-	
-  @brief GLUTによるOpenGLウィンドウクラス
+  @file scene.cpp
 
-  @author Makoto Fujisawa 
-  @date   2020-06
+  @brief GLFWによるOpenGL描画
+
+  @author Makoto Fujisawa
+  @date   2021-04
 */
-// FILE --rx_controller.cpp--
+
 
 #pragma warning (disable: 4996)
 #pragma warning (disable: 4819)
@@ -106,6 +106,9 @@ void SceneSWE::Init(int argc, char* argv[])
 
 	// 波の初期化
 	initWave();
+
+	// アニメーションON
+	switchanimation(1);
 }
 
 

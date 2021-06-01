@@ -296,10 +296,10 @@ int WaveSWE::IntersectRay(const glm::vec3 &ray_origin, const glm::vec3 &ray_dir,
  * @param[in] idx 頂点インデックス
  * @param[in] h 追加する高さ
  */
-void WaveSWE::AddHeight(int idx, float h)
+void WaveSWE::AddHeight(int idx, float dh)
 {
 	if(idx < 0 || idx >= m_nx*m_ny) return;
-	m_d[idx] += h;
+	m_d[idx] += dh;
 	m_dprev[idx] = m_d[idx];
 	float b = m_ground((idx%m_nx)*m_dx, (idx/m_nx)*m_dy);	// 水底の地形の高さ
 	m_h[idx] = m_d[idx]+b;
@@ -309,7 +309,7 @@ void WaveSWE::AddHeight(int i, int j, float h)
 {
 	AddHeight(IDX(i, j), h);
 }
-void WaveSWE::AddHeightArea(int idx, float h)
+void WaveSWE::AddHeightArea(int idx, float dh)
 {
 	if(idx < 0 || idx >= m_nx*m_ny) return;
 	int s = 3;
@@ -320,13 +320,30 @@ void WaveSWE::AddHeightArea(int idx, float h)
 			if(i >= i0-s && i <= i0+s && j >= j0-s && j <= j0+s){
 				int idx = IDX(i, j);
 				float b = m_ground(i*m_dx, j*m_dy);	// 水底の地形の高さ
-				m_d[idx] = m_dprev[idx] = -b + h;
+				m_d[idx] = m_dprev[idx] = m_avg_h-b + dh;
 			}
 		}
 	}
 	updateHeight(&m_d[0]);
 	updateMesh(m_h);
 }
+
+/*!
+ * 平均高さの算出
+ * @return 平均高さ
+ */
+double WaveSWE::calAvarageHeight(void)
+{
+	int n = m_nx*m_ny;
+	if(n <= 0) return 0.0f;
+
+	float hsum = 0.0f;
+	for(const float &h : m_h){
+		hsum += h;
+	}
+	return hsum/static_cast<float>(n);
+}
+
 
 
 /*!
@@ -367,13 +384,13 @@ void WaveSWE::bnd(float *d)
 void WaveSWE::bnd(float *u, float *v)
 {
 	for(int i = 0; i < m_nx; ++i){
-		u[IDX(i, 0)] = u[IDX(i, 1)]; u[IDX(i, m_ny-1)] = u[IDX(i, m_ny-2)];
+		u[IDX(i, 0)] = u[IDX(i, 1)]; u[IDX(i, m_ny-1)] = u[IDX(i, m_ny-2)];	// 壁に平行な成分は単純にコピー
 		//v[IDX(i, 0)] = v[IDX(i, m_ny-1)] = 0.0f;
-		v[IDX(i, 0)] = v[IDX(i, 1)]; v[IDX(i, m_ny-1)] = v[IDX(i, m_ny-2)];	// 手前と奥の面だけは波が抜けるようにする
+		v[IDX(i, 0)] = v[IDX(i, 1)]; v[IDX(i, m_ny-1)] = v[IDX(i, m_ny-2)];	// 手前と奥の面は波が抜けるようにする
 	}
 	for(int j = 0; j < m_ny; ++j){
-		u[IDX(0, j)] = u[IDX(m_nx-1, j)] = 0.0f;
-		v[IDX(0, j)] = v[IDX(1, j)]; v[IDX(m_nx-1, j)] = v[IDX(m_nx-2, j)];
+		u[IDX(0, j)] = u[IDX(m_nx-1, j)] = 0.0f;	// 左右の面は壁面
+		v[IDX(0, j)] = v[IDX(1, j)]; v[IDX(m_nx-1, j)] = v[IDX(m_nx-2, j)];	// 壁に平行な成分は単純にコピー
 	}
 }
 
@@ -391,6 +408,43 @@ void WaveSWE::updateHeight(float *d)
 			float b = m_ground(i*m_dx, j*m_dy);	// 水底の地形の高さ
 			m_h[idx] = d[idx]+b;
 		}
+	}
+
+	// マウス入出力のために平均高さを求めておく
+	//  - 境界条件によっては高さが変わってしまう
+	m_avg_h = calAvarageHeight();
+}
+
+/*!
+ * SWEによるハイトフィールドの更新
+ *  - 速度の粘性拡散項の計算
+ *  - *_newの方が更新後の値で出力値となる
+ *  - この項は速度のみに適用する
+ * @param[in] u,v 更新前の速度場を格納した配列
+ * @param[out] u_new,v_new 更新後の速度場を格納する配列
+ * @param[in] dt 時間ステップ幅
+ */
+void WaveSWE::viscosity(float *u_new, float *v_new, float *u, float *v, float dt)
+{
+	if(m_nu <= 0.0){ m_nu = 0.0; return; }
+	float dx = m_dx;
+	float dy = m_dy;
+
+	// u_new,v_newに値をコピーしておく
+	for(int i = 0; i < m_nx*m_ny; ++i){ u_new[i] = u[i]; v_new[i] = v[i]; }
+
+	// ガウス・ザイデル法で粘性拡散項を解く
+	for(int k = 0; k < 10; ++k){	// ガウス・ザイデル反復
+		for(int j = 1; j < m_ny-1; ++j){
+			for(int i = 1; i < m_nx-1; ++i){
+				int idx = IDX(i, j);
+
+				// 正方グリッドを仮定する(dx=dy)ならもう少し式をまとめられるが，分かりやすくするために中心差分式そのまま計算
+				u_new[idx] = u_new[idx] + dt*m_nu*((u_new[IDX(i+1, j)]-2*u_new[idx]+u_new[IDX(i-1, j)])/(dx*dx) + (u_new[IDX(i, j+1)]-2*u_new[idx]+u_new[IDX(i, j-1)])/(dy*dy));
+				v_new[idx] = v_new[idx] + dt*m_nu*((v_new[IDX(i+1, j)]-2*v_new[idx]+v_new[IDX(i-1, j)])/(dx*dx) + (v_new[IDX(i, j+1)]-2*v_new[idx]+v_new[IDX(i, j-1)])/(dy*dy));
+			}
+		}
+		bnd(u_new, v_new);
 	}
 }
 
@@ -410,30 +464,56 @@ void WaveSWE::advection(float *d_new, float *d, float *u_new, float *v_new, floa
 	float dx = m_dx;
 	float dy = m_dy;
 
+	// TODO:この部分にSWE計算での移流項の計算コードを書く(セミラグランジュ法で計算すること)
+	// ・配列d_new,u_new,v_newにそれぞれ移流項を適用した後の水深,x方向速度,y方向速度を格納する
+	// ・移流項適用前の水深,速度は配列d,u,vに格納されている
+	//   ⇒ 1次元配列を使っているので，取り出すときはd[IDX(i,j)]のようにIDX関数を使うと便利
+	// ・各グリッドセルの幅は変数dx,dy(もしくはm_dx,m_dy)に入っている
+	// ・グリッドセル数はm_nx,m_nyで，境界を除いた部分を処理した後，境界処理関数bndを呼び出すのが基本的な流れ
+	//  for(int j = 1; j < m_ny-1; ++j){
+	//  	for(int i = 1; i < m_nx-1; ++i){
+	//  		// d,u,vの更新処理
+	//			// ⇒d_new,u_new,v_newに結果を格納
+	//  	}
+	//  }
+	//  bnd(d_new);
+	//  bnd(u_new, v_new);
+	//  ・移流計算でのd,u,vは同じ反復ループ内で計算してもOK．
+	//    ただし，バックトレース位置を求める速度には更新したu_new,v_newではなく移流前の値u,vを使うこと
+	//  ・バックトレースした位置がグリッド範囲外に成らないようにチェックが必要(glm::clamp<int>(x, min, max)を上手く使おう)
+
+	// ----課題ここから----
+
 	// 移流項をsemi-Lagrangian法で解く
 	for(int j = 1; j < m_ny-1; ++j){
 		for(int i = 1; i < m_nx-1; ++i){
 			int idx = IDX(i, j);
-			float x = i*dx, y = j*dy; // グリッド位置
 
-			// バックトレースした位置
-			x -= dt*u[idx];
-			y -= dt*v[idx];
+			// バックトレースした位置を計算
+			double xb = i*dx-dt*u[idx];
+			double yb = j*dy-dt*v[idx];
 
 			// バックトレースした位置の周囲のグリッド情報
-			int i0 = (int)(x/dx), j0 = (int)(y/dy);
-			i0 = RX_CLAMP(i0, 0, m_nx-2);
-			j0 = RX_CLAMP(j0, 0, m_ny-2);
-			float s = (x-i0*dx)/dx, t = (y-j0*dy)/dy;
+			int ib = (int)(xb/dx), jb = (int)(yb/dy);
+			ib = glm::clamp<int>(ib, 0, m_nx-2);
+			jb = glm::clamp<int>(jb, 0, m_ny-2);
+			float s = (xb-ib*dx)/dx, t = (yb-jb*dy)/dy;
 
 			// バックトレースした位置でのu,v,hを線形補間で求める
-			u_new[idx] = u[IDX(i0, j0)]*(1-s)*(1-t) + u[IDX(i0+1, j0)]*s*(1-t) + u[IDX(i0, j0+1)]*(1-s)*t + u[IDX(i0+1, j0+1)]*s*t;
-			v_new[idx] = v[IDX(i0, j0)]*(1-s)*(1-t) + v[IDX(i0+1, j0)]*s*(1-t) + v[IDX(i0, j0+1)]*(1-s)*t + v[IDX(i0+1, j0+1)]*s*t;
-			d_new[idx] = d[IDX(i0, j0)]*(1-s)*(1-t) + d[IDX(i0+1, j0)]*s*(1-t) + d[IDX(i0, j0+1)]*(1-s)*t + d[IDX(i0+1, j0+1)]*s*t;
+			u_new[idx] = u[IDX(ib, jb)]*(1-s)*(1-t) + u[IDX(ib+1, jb)]*s*(1-t) + u[IDX(ib, jb+1)]*(1-s)*t + u[IDX(ib+1, jb+1)]*s*t;
+			v_new[idx] = v[IDX(ib, jb)]*(1-s)*(1-t) + v[IDX(ib+1, jb)]*s*(1-t) + v[IDX(ib, jb+1)]*(1-s)*t + v[IDX(ib+1, jb+1)]*s*t;
+			d_new[idx] = d[IDX(ib, jb)]*(1-s)*(1-t) + d[IDX(ib+1, jb)]*s*(1-t) + d[IDX(ib, jb+1)]*(1-s)*t + d[IDX(ib+1, jb+1)]*s*t;
 		}
 	}
 	bnd(d_new); bnd(u_new, v_new);
+
+	//-------------------------------
+
+	// ----課題ここまで----
+
 }
+
+
 
 /*!
  * SWEによるハイトフィールドの更新
@@ -451,12 +531,31 @@ void WaveSWE::pressure(float *d_new, float *d, float *u_new, float *v_new, float
 	float dy = m_dy;
 	float g = m_gravity;
 
+	// TODO:この部分にSWE計算での圧力項の計算コードを書く(中心差分で計算すること)
+	// ・配列d_new,u_new,v_newにそれぞれ移流項を適用した後の水深,x方向速度,y方向速度を格納する
+	// ・移流項適用前の水深,速度は配列d,u,vに格納されている
+	//   ⇒ 1次元配列を使っているので，取り出すときはd[IDX(i,j)]のようにIDX関数を使うと便利
+	// ・各グリッドセルの幅は変数dx,dy(もしくはm_dx,m_dy)に入っている
+	// ・グリッドセル数はm_nx,m_nyで，境界を除いた部分を処理した後，境界処理関数bndを呼び出すのが基本的な流れ
+	//  for(int j = 1; j < m_ny-1; ++j){
+	//  	for(int i = 1; i < m_nx-1; ++i){
+	//  		// d,u,vの更新処理
+	//			// ⇒d_new,u_new,v_newに結果を格納
+	//  	}
+	//  }
+	//  bnd(d_new);
+	//  bnd(u_new, v_new);
+	//  ・こちらは移流計算と違ってu,vを更新するループを回し終わった後に，別のループでdを更新することになる．
+	//    dを更新するときは更新済みのu_new,v_newを使うこと
+
+	// ----課題ここから----
+
 	// u,vの更新
 	for(int j = 1; j < m_ny-1; ++j){
 		for(int i = 1; i < m_nx-1; ++i){
 			int idx = IDX(i, j);
-			u_new[idx] -= dt*g*(m_h[IDX(i+1, j)]-m_h[IDX(i-1, j)])/(2*dx);
-			v_new[idx] -= dt*g*(m_h[IDX(i, j+1)]-m_h[IDX(i, j-1)])/(2*dy);
+			u_new[idx] = u[idx]-dt*g*(m_h[IDX(i+1, j)]-m_h[IDX(i-1, j)])/(2*dx);
+			v_new[idx] = v[idx]-dt*g*(m_h[IDX(i, j+1)]-m_h[IDX(i, j-1)])/(2*dy);
 		}
 	}
 	bnd(u_new, v_new);
@@ -465,40 +564,13 @@ void WaveSWE::pressure(float *d_new, float *d, float *u_new, float *v_new, float
 	for(int j = 1; j < m_ny-1; ++j){
 		for(int i = 1; i < m_nx-1; ++i){
 			int idx = IDX(i, j);
-
-			// 式(18)によるhの更新(本当は式(25)のように陰解法で解いた方がよいがここでは簡易的に陽的に解いている)
 			d_new[idx] = d[idx] - dt*d[idx]*((u_new[IDX(i+1, j)]-u_new[IDX(i-1, j)])/(2*dx)+(v_new[IDX(i, j+1)]-v_new[IDX(i, j-1)])/(2*dy));
 		}
 	}
 	bnd(d_new);
-}
 
-/*!
- * SWEによるハイトフィールドの更新
- *  - 速度の粘性拡散項の計算
- *  - *_newの方が更新後の値で出力値となる
- *  - ガウス・ザイデル法を使っているので現在の値を格納した配列のみでOKであることに注意
- * @param[in] u,v 更新前の速度場を格納した配列
- * @param[in] dt 時間ステップ幅
- */
-void WaveSWE::viscosity(float *u, float *v, float dt)
-{
-	float dx = m_dx;
-	float dy = m_dy;
+	// ----課題ここまで----
 
-	// ガウス・ザイデル法で粘性拡散項を解く
-	for(int k = 0; k < 10; ++k){	// ガウス・ザイデル反復
-		for(int j = 1; j < m_ny-1; ++j){
-			for(int i = 1; i < m_nx-1; ++i){
-				int idx = IDX(i, j);
-
-				// 正方グリッドを仮定する(dx=dy)ならもう少し式をまとめられるが，分かりやすくするために中心差分式そのまま計算
-				u[idx] += dt*m_nu*((u[IDX(i+1, j)]-2*u[idx]+u[IDX(i-1, j)])/(dx*dx) + (u[IDX(i, j+1)]-2*u[idx]+u[IDX(i, j-1)])/(dy*dy));
-				v[idx] += dt*m_nu*((v[IDX(i+1, j)]-2*v[idx]+v[IDX(i-1, j)])/(dx*dx) + (v[IDX(i, j+1)]-2*v[idx]+v[IDX(i, j-1)])/(dy*dy));
-			}
-		}
-	}
-	bnd(u, v);
 }
 
 
@@ -513,19 +585,25 @@ int WaveSWE::Update(int step, float dt)
 	if(m_surf) makeSurf(step*dt, &m_dprev[0], 0.1);
 
 	// SWEによるハイトフィールドの更新
-	// 粘性拡散項
-	viscosity(&m_uprev[0], &m_vprev[0], dt);
 
-	// 移流項
+	// 移流項(*_prev ⇒ *)
 	advection(&m_d[0], &m_dprev[0], &m_u[0], &m_v[0], &m_uprev[0], &m_vprev[0], dt);
 
-	// 圧力項
-	updateHeight(&m_d[0]);	// 水面高さ場の更新
-	pressure(&m_dprev[0], &m_d[0], &m_uprev[0], &m_vprev[0], &m_u[0], &m_v[0], dt);
+	// 粘性項(速度u,vは* ⇒ *_prev)
+	viscosity(&m_uprev[0], &m_vprev[0], &m_u[0], &m_v[0], dt);
 
-	// ハイトフィールドメッシュの更新
-	updateHeight(&m_dprev[0]);	// 水面高さ場の更新
+	// 水面高さ場hの更新(h=b+d)
+	updateHeight(&m_d[0]);
+
+	// 圧力項(水深dは* ⇒ *_prev，速度u,vは*_prev ⇒ *)
+	pressure(&m_dprev[0], &m_d[0], &m_u[0], &m_v[0], &m_uprev[0], &m_vprev[0], dt);
+
+	// 水面高さ場hの再更新と描画用メッシュの更新
+	updateHeight(&m_dprev[0]);
 	updateMesh(m_h);
+
+	// 次のステップのためにu_prev,v_prevを更新しておく
+	for(int i = 0; i < m_nx*m_ny; ++i){ m_uprev[i] = m_u[i]; m_vprev[i] = m_v[i]; }
 
 	return 1;
 }
