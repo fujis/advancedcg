@@ -902,6 +902,7 @@ int CharacterAnimation::skinningDQS(vector<glm::vec3> &vrts, const vector< map<i
 		// glmでの四元数(glm::quat)とベクトル(glm::vec3)の掛け算(*)はそのベクトルを四元数で回転させる(qvq*)
 		v_new = dq_blend.getRotation()*v+trans;
 
+
 		// ----課題ここまで----
 
 		vrts[i] = glm::vec3(v_new[0], v_new[1], v_new[2]);

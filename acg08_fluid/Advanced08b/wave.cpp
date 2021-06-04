@@ -27,6 +27,20 @@ WaveSWE::WaveSWE()
 	m_surf = false;
 	m_gs = false;
 	m_nu = 1.0e-3;
+
+	m_sphere_rad = -1.0f;	// 半径が負ならば浮遊物なし
+	m_sphere_vel = glm::vec3(0.0f);
+
+	// 描画用メッシュ生成
+	int nvrts, ntris;
+	vector<int> tris;
+	MakeSphere(nvrts, m_sphere.vertices, m_sphere.normals, ntris, tris, 0.5, 32, 16);
+	rxFace f;
+	f.resize(3);
+	for(int i = 0; i < ntris; ++i){
+		f[0] = tris[3*i]; f[1] = tris[3*i+1]; f[2] = tris[3*i+2];
+		m_sphere.faces.push_back(f);
+	}
 }
 
 /*!
@@ -139,6 +153,16 @@ void WaveSWE::Draw(int draw)
 			}
 			glEnd();
 		}
+
+		// 球体(浮遊物)
+		glColor3d(0.2, 0.7, 0.4);
+		if(m_sphere_rad > 0.0f){
+			glPushMatrix();
+			glTranslatef(m_sphere_cen[0], m_sphere_cen[1], m_sphere_cen[2]);
+			glScalef(2.0*m_sphere_rad, 2.0*m_sphere_rad, 2.0*m_sphere_rad);
+			drawPolygon(m_sphere);
+			glPopMatrix();
+		}
 	}
 
 
@@ -172,6 +196,33 @@ void WaveSWE::Draw(int draw)
 	}
 }
 
+
+/*!
+ * ポリゴンの描画
+ * @param[in] polys ポリゴンデータ
+ */
+void WaveSWE::drawPolygon(rxPolygons &poly)
+{
+	// 頂点数とポリゴン数
+	int vn = (int)poly.vertices.size();
+	int pn = (int)poly.faces.size();
+
+	// すべてのポリゴンを描画
+	for(int i = 0; i < pn; ++i){
+		const rxFace *face = &(poly.faces[i]);
+		int n = (int)face->vert_idx.size();
+
+		// ポリゴン描画
+		glBegin(GL_POLYGON);
+		for(int j = 0; j < n; ++j){
+			int idx = face->vert_idx[j];
+			glNormal3fv(glm::value_ptr(poly.normals[idx]));
+			glVertex3fv(glm::value_ptr(poly.vertices[idx]));
+		}
+		glEnd();
+	}
+
+}
 
 /*!
  * n×nの頂点を持つメッシュ生成(x-z平面)
@@ -288,7 +339,45 @@ int WaveSWE::IntersectRay(const glm::vec3 &ray_origin, const glm::vec3 &ray_dir,
 			}
 		}
 	}
+	t = min_t;
 	return v;
+}
+
+
+/*!
+ * 頂点選択(レイと頂点(球)の交差判定)
+ * @param[in]  ray_origin,ray_dir レイ(光線)の原点と方向ベクトル
+ * @param[out] t 交差があったときの原点から交差点までの距離(媒介変数の値)
+ * @param[in]  rad 球の半径(これを大きくすると頂点からマウスクリック位置が多少離れていても選択されるようになる)
+ * @return 交差していればその頂点番号，交差していなければ-1を返す
+ */
+static inline int intersectRaySphere(const glm::vec3 &ray_origin, const glm::vec3 &ray_dir, float &min_t, glm::vec3 cen, float &rad)
+{
+	int v = -1;
+	min_t = 1.0e6;
+	float rad2 = rad*rad;
+	float a = glm::length2(ray_dir);
+	if(a < 1.0e-6) return 0;
+
+	glm::vec3 s = ray_origin-cen;
+	float b = 2.0f*glm::dot(s, ray_dir);
+	float c = glm::length2(s)-rad2;
+
+	float D = b*b-4.0f*a*c;
+	if(D < 0.0f) return 0;	// 交差なし
+
+	float t0 = (-b-sqrt(D))/(2.0*a);
+	float t1 = (-b+sqrt(D))/(2.0*a);
+	if(t0 > 0.0 && t1 > 0.0 && t0 < min_t){	// 2交点がある場合
+		min_t = t0;
+		return 2;
+	}
+	else if(t0 < 0.0 && t1 > 0.0 && t1 < min_t){	// 1交点のみの場合(光線の始点が球内部にある)
+		min_t = t1;
+		return 1;
+	}
+
+	return 0;
 }
 
 /*!
@@ -359,6 +448,54 @@ void WaveSWE::makeSurf(float t, float *h, float wave_height)
 		float b = m_ground(i*m_dx, 1*m_dy);	// 水底の地形の高さ
 		h[IDX(i, 1)] = -b + ht;
 	}
+}
+
+
+/*!
+ * 剛体との相互作用
+ * @param[in] dt 時間ステップ幅
+ */
+void WaveSWE::couplingRigid(float *d, float dt)
+{
+	if(m_sphere_rad <= 0.0f) return;
+
+	float rho = 1000.f;
+	float r = m_sphere_rad;
+	float r2 = m_sphere_rad*m_sphere_rad;
+	glm::vec3 c = m_sphere_cen;
+	float dx = m_dx;
+	float dy = m_dy;
+	glm::vec3 fr(0.0f);
+	glm::vec3 cell_origin = m_mesh.vertices[0];
+	for(int j = 1; j < m_ny-1; ++j){
+		for(int i = 1; i < m_nx-1; ++i){
+			glm::vec3 p = m_mesh.vertices[IDX(i, j)];
+			if(glm::length2(p-c) < r2){
+				glm::vec3 cp(p[0]-c[0], 0.0, p[2]-c[2]);	// 球中心を原点としたxz平面上でのpまでのベクトル
+				float theta = acos(glm::length(cp)/r);		// ↑のxz平面と球表面の交点へのベクトルとの間の角度
+				float t = p[1]-(c[1]-r*sin(theta));			// 球体への水面めり込み量
+				
+				float V = t*dx*dy;
+
+				// 剛体にかかる力
+				glm::vec3 f(0.0f, m_gravity*V*rho, 0.0f);
+				fr += f;
+
+				d[IDX(i, j)] -= t;
+				d[IDX(i-1, j)] += 0.25*t;
+				d[IDX(i+1, j)] += 0.25*t;
+				d[IDX(i, j-1)] += 0.25*t;
+				d[IDX(i, j+1)] += 0.25*t;
+			}			
+		}
+	}
+
+	float m = 3.0;
+
+	glm::vec3 fd = -15.0f*m_sphere_vel;
+
+	m_sphere_vel += glm::vec3(0.0, -m_gravity, 0.0)*dt + fr/m*dt +fd/m*dt;
+	m_sphere_cen += m_sphere_vel*dt;
 }
 
 
@@ -481,8 +618,6 @@ void WaveSWE::advection(float *d_new, float *d, float *u_new, float *v_new, floa
 	//  ・移流計算でのd,u,vは同じ反復ループ内で計算してもOK．
 	//    ただし，バックトレース位置を求める速度には更新したu_new,v_newではなく移流前の値u,vを使うこと
 	//  ・バックトレースした位置がグリッド範囲外に成らないようにチェックが必要(glm::clamp<int>(x, min, max)を上手く使おう)
-	//  ・高さや速度が定義されているのはグリッドセル中心ですが，最小インデックスをもつグリッドセルの中心を原点とした座標系を仮定しているので，
-	//    グリッドセル中心座標は(i*dx, j*dx)でOK((i+0.5)*dxとかにしなくてもよい)
 
 	// ----課題ここから----
 
@@ -586,8 +721,10 @@ int WaveSWE::Update(int step, float dt)
 	// 強制的な波の生成
 	if(m_surf) makeSurf(step*dt, &m_dprev[0], 0.1);
 
-	// SWEによるハイトフィールドの更新
+	// 浮遊物の影響
+	couplingRigid(&m_dprev[0], dt);
 
+	// SWEによるハイトフィールドの更新
 	// 移流項(*_prev ⇒ *)
 	advection(&m_d[0], &m_dprev[0], &m_u[0], &m_v[0], &m_uprev[0], &m_vprev[0], dt);
 
