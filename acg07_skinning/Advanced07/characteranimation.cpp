@@ -902,6 +902,31 @@ int CharacterAnimation::skinningDQS(vector<glm::vec3> &vrts, const vector< map<i
 		// glmでの四元数(glm::quat)とベクトル(glm::vec3)の掛け算(*)はそのベクトルを四元数で回転させる(qvq*)
 		v_new = dq_blend.getRotation()*v+trans;
 
+		//---------------------
+
+		//map<int, double>::const_iterator itr = weights[i].begin();
+		//DualQuaternion sigma(glm::quat(0, 0, 0, 0), glm::quat(0, 0, 0, 0));
+		//for(; itr != weights[i].end(); ++itr){
+		//	int j = itr->first;	// ジョイント番号
+		//	float wij = static_cast<float>(itr->second);	// 重み
+		//	// ここにジョイントjに関する処理を書く
+		//	glm::mat4 WB = m_joints[j].W * glm::inverse(m_joints[j].B);
+		//	glm::mat3 WBrot = glm::mat3(WB);
+		//	glm::quat qj = glm::toQuat(WBrot);
+		//	glm::vec3 tj = glm::vec3(WB[3]);
+		//	DualQuaternion qjDual;
+		//	qjDual.m_real = qj;
+		//	qjDual.m_dual = 0.5 * glm::quat(0, tj) * qj;
+		//	sigma += wij * qjDual;
+		//}
+		//DualQuaternion sigmaCon;
+		//sigmaCon.m_real = glm::conjugate(sigma.m_real);
+		//sigmaCon.m_dual = glm::conjugate(sigma.m_dual);
+		//DualQuaternion qi = sigma / (sigma * sigmaCon);
+		////sigma.normalize();
+		////DualQuaternion qi = sigma;
+		//glm::quat q = qi.m_real * glm::quat(0, v) * glm::conjugate(qi.m_real) + 2.0f * qi.m_dual * glm::conjugate(qi.m_real);
+		//v_new = glm::vec3(q.x, q.y, q.z);
 
 		// ----課題ここまで----
 

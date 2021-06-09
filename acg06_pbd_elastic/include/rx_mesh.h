@@ -197,14 +197,14 @@ inline void rxPolygons::glMaterialdv(GLenum face, GLenum pname, const GLdouble *
 	glMaterialfv(face, pname, col);
 }
 
+
 /*!
  * ポリゴンの描画
  * @param[in] polys ポリゴンデータ
  * @param[in] draw 描画フラグ(下位ビットから頂点,エッジ,面,法線 - 1,2,4,8)
  */
 inline void rxPolygons::Draw(int draw, float dn, bool col)
-{
-	// 頂点数とポリゴン数
+{	// 頂点数とポリゴン数
 	int vn = (int)vertices.size();
 	int pn = (int)faces.size();
 		

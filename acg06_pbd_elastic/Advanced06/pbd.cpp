@@ -86,14 +86,16 @@ void ElasticPBD::Draw(int drw)
 	// 頂点描画
 	if(drw & 0x0001){
 		glDisable(GL_LIGHTING);
-		glPointSize(5.0);
+		glPointSize(50.0);
 		glColor3d(1.0, 0.3, 0.3);
-		glBegin(GL_POINTS);
 		for(int i = 0; i < m_iNumVertices; ++i){
 			glm::vec3 v = m_vCurPos[i];
+			glPushName(i);
+			glBegin(GL_POINTS);
 			glVertex3d(v[0], v[1], v[2]);
+			glEnd();
+			glPopName();
 		}
-		glEnd();
 	}
 
 	// エッジ描画
