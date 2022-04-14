@@ -102,7 +102,7 @@ void ElasticPBD::Draw(int drw)
 	if(drw & 0x0002){
 		glEnable(GL_LIGHTING);
 		glColor3d(0.5, 0.9, 0.9);
-		glLineWidth(4.0);
+		glLineWidth(1.0);
 		glBegin(GL_LINES);
 		for(int i = 0; i < m_iNumEdge; ++i){
 			const rxEdge &e = m_poly.edges[i];

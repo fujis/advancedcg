@@ -537,6 +537,7 @@ void WaveSWE::pressure(float *d_new, float *d, float *u_new, float *v_new, float
 	// ・配列d_new,u_new,v_newにそれぞれ移流項を適用した後の水深,x方向速度,y方向速度を格納する
 	// ・移流項適用前の水深,速度は配列d,u,vに格納されている
 	//   ⇒ 1次元配列を使っているので，取り出すときはd[IDX(i,j)]のようにIDX関数を使うと便利
+	// ・水面高さhはメンバ変数m_hに格納されていて，Update関数内で呼ばれているupdateHeight関数でその値が更新されている．
 	// ・各グリッドセルの幅は変数dx,dy(もしくはm_dx,m_dy)に入っている
 	// ・グリッドセル数はm_nx,m_nyで，境界を除いた部分を処理した後，境界処理関数bndを呼び出すのが基本的な流れ
 	//  for(int j = 1; j < m_ny-1; ++j){
