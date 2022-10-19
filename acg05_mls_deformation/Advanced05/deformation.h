@@ -1,8 +1,8 @@
-/*! 
-  @file rx_deform.h
-	
+/*!
+  @file deformation.h
+
   @brief 2Dメッシュ変形
- 
+
   @author Makoto Fujisawa
   @date 2021-03
 */
@@ -34,8 +34,8 @@ class rxMeshDeform2D
 	vector<unsigned int> m_vTri;	//!< 三角形ポリゴン頂点インデックス
 	int m_iNt, m_iNv;				//!< ポリゴン数，頂点数
 
-	vector<int> m_vFix;				//!< 固定頂点リスト
-	int m_iNfix;					//!< 固定点数
+	vector<int> m_vCP;				//!< 制御点リスト
+	int m_iNcp;					//!< 制御点数
 
 	GLuint m_vao_mesh;				//!< メッシュデータのVAO
 	GLuint m_vao_fix;				//!< 固定頂点のためのVAO
@@ -47,7 +47,7 @@ public:
 public:
 	//! コンストラクタ
 	rxMeshDeform2D();
-	
+
 	//! デストラクタ
 	~rxMeshDeform2D();
 
@@ -62,14 +62,14 @@ public:
 	void DrawFixPoints(void);
 	void InitVAO(void);
 
-	//! 近傍頂点探索
+	//! 近傍頂点,近傍制御点探索
 	int Search(glm::vec2 pos, double h = 0.05);
-	int SearchFix(glm::vec2 pos, double h = 0.05);
+	int SearchCP(glm::vec2 pos, double h = 0.05);
 
 	//! 固定点設定
-	void SetFix(int idx, glm::vec2 pos, bool move = false);
+	void SetCP(int idx, glm::vec2 pos, bool move = false);
 	//! 固定点解除
-	void UnsetFix(int idx);
+	void UnsetCP(int idx);
 
 protected:
 	//! n×nの頂点を持つメッシュ生成(x-z平面)
@@ -79,7 +79,7 @@ protected:
 	void generateRandomMesh(glm::vec2 c1, glm::vec2 c2, double min_dist, int n);
 
 	//! 固定点座標VAOの更新
-	void updateFixVAO(void);
+	void updateCPVAO(void);
 
 	//! グリッドインデックスの計算
 	inline int IDX(int i, int j, int n){ return i+j*n; }

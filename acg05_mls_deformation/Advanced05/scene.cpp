@@ -1,9 +1,9 @@
 /*!
   @file rx_controller.cpp
-	
+
   @brief GLUTによるOpenGLウィンドウクラス
 
-  @author Makoto Fujisawa 
+  @author Makoto Fujisawa
   @date   2020-06
 */
 // FILE --rx_controller.cpp--
@@ -103,6 +103,7 @@ void SceneMLS::Init(int argc, char* argv[])
 
 	// メッシュファイル初期化
 	m_md = new rxMeshDeform2D();
+	m_md->InitVAO();
 
 	// アニメーションON
 	switchanimation(1);
@@ -128,16 +129,14 @@ void SceneMLS::Draw(void)
 
 	glDisable(GL_LIGHTING);
 
-	m_md->InitVAO();
-
 	// GLSLシェーダをセット
 	glUseProgram(m_shader.Prog);
 
 	// uniform
 	int loc_color = glGetUniformLocation(m_shader.Prog, "color");
 	int loc_mproj = glGetUniformLocation(m_shader.Prog, "mat_proj");
-	int loc_mv    = glGetUniformLocation(m_shader.Prog, "mat_mv");
-	int loc_tex   = glGetUniformLocation(m_shader.Prog, "tex");
+	int loc_mv = glGetUniformLocation(m_shader.Prog, "mat_mv");
+	int loc_tex = glGetUniformLocation(m_shader.Prog, "tex");
 	int loc_alpha = glGetUniformLocation(m_shader.Prog, "alpha");
 
 	glUniformMatrix4fv(loc_mproj, 1, GL_FALSE, glm::value_ptr(mp));	// 変換行列
@@ -222,11 +221,11 @@ void SceneMLS::Mouse(GLFWwindow* window, int button, int action, int mods)
 	if(button == GLFW_MOUSE_BUTTON_LEFT){
 		if(action == GLFW_PRESS){
 			int picked = -1;
-			picked = m_md->SearchFix(mpos, 0.05);
+			picked = m_md->SearchCP(mpos, 0.05);
 			if(picked == -1) picked = m_md->Search(mpos, 0.05);
 			if(picked != -1){
 				m_picked = picked;
-				m_md->SetFix(m_picked, mpos, false);
+				m_md->SetCP(m_picked, mpos, false);
 			}
 			else if(m_picked){
 				m_picked = -1;
@@ -241,9 +240,9 @@ void SceneMLS::Mouse(GLFWwindow* window, int button, int action, int mods)
 	else if(button == GLFW_MOUSE_BUTTON_RIGHT){
 		if(action == GLFW_PRESS){
 			int picked = -1;
-			picked = m_md->SearchFix(mpos, 0.05);
+			picked = m_md->SearchCP(mpos, 0.05);
 			if(picked != -1){
-				m_md->UnsetFix(picked);
+				m_md->UnsetCP(picked);
 				m_picked = -1;
 			}
 		}
@@ -255,9 +254,9 @@ void SceneMLS::Mouse(GLFWwindow* window, int button, int action, int mods)
  */
 void SceneMLS::Cursor(GLFWwindow* window, double x, double y)
 {
-	if(glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_RELEASE && 
-	   glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_MIDDLE) == GLFW_RELEASE &&
-	   glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_RELEASE){
+	if(glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_RELEASE &&
+		glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_MIDDLE) == GLFW_RELEASE &&
+		glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_RELEASE){
 		return;
 	}
 
@@ -266,7 +265,7 @@ void SceneMLS::Cursor(GLFWwindow* window, double x, double y)
 			glm::vec2 mpos(x/(double)m_winw, (m_winh-y-1.0)/(double)m_winh);
 			mpos *= m_envmax-m_envmin;
 			mpos += m_envmin;
-			m_md->SetFix(m_picked, mpos, true);
+			m_md->SetCP(m_picked, mpos, true);
 			//m_md->Update(0.01);
 		}
 	}
