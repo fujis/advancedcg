@@ -8,7 +8,6 @@
   */
 
 
-
 //-----------------------------------------------------------------------------
 // インクルードファイル
 //-----------------------------------------------------------------------------
@@ -16,6 +15,331 @@
 
 #include "rx_sampler.h"
 #include "rx_delaunay.h"
+
+
+//-----------------------------------------------------------------------------
+// 課題用関数
+//-----------------------------------------------------------------------------
+/*!
+* メッシュ変形 by MLS
+*  - Affine Deformation
+* @param[in] v 変形する頂点座標
+* @param[in] pc 制御点重心
+* @param[in] qc 変形後の制御点重心
+* @param[in] alpha 重みwを計算するための係数(w=1/(|p-v|^(2*alpha)))
+* @return 変形後の座標(f(v))
+*/
+glm::vec2 rxMeshDeform2D::affineDeformation(const glm::vec2 &v, const glm::vec2 &pc, const glm::vec2 &qc, const double alpha)
+{
+	// TODO:この部分で 入力頂点座標v と 制御点座標p,q から入力頂点の変形後の座標を計算するコードを書く
+	// - Ajを計算してから変形後の座標を計算するのでも，スライドp43の式を直接計算するのでもどちらでもOK
+	//   (Ajの前計算は今回は行わないでもよい)
+	// - glmでの行列×縦ベクトルの計算は行列とベクトルをそれぞれglm::mat2,glm::vec2で定義しているならば単純な掛け算として計算出来る
+	//    例) glm::mat2 m(1.0f);
+	//        glm::vec2 v(0.0f);
+	//        glm::vec2 mv = m*v;
+	//   ただし，横ベクトル×行列の計算部分はglmのオペレータ*は使わない方がよい(glmは縦ベクトルを前提としている)．
+	//        glm::vec2 vm;
+	// 	      vm[0] = v[0]*m[0][0]+v[1]*m[1][0];
+	//        vm[1] = v[0]*m[0][1]+v[1]*m[1][1];
+	// - 逆行列計算にはglm::inverse関数が使えるが，行列の正則性チェックはしていないようなので，
+	//   glm::determinant関数などで行列式の値を求めて0でないかをチェックするエラー処理を忘れないようにしよう．
+
+	//
+	// - 制御点でループして相対座標を計算するまでのコード例: 
+	//for(int k = 0; k < m_iNcp; ++k){	// 制御点数(m_iNcp)でループを回す
+	//	int j = m_vCP[k];	// 制御点の頂点インデックス
+	//
+	//	// 重心を中心とした制御点の相対座標
+	//	// 各頂点の座標は配列m_vPとm_vXに格納されている(それぞれ初期形状と変形後の形状)
+	//	glm::vec2 p = m_vP[j]-pc;	// 初期形状での座標
+	//	glm::vec2 q = m_vX[j]-qc;	// 変形後の座標
+	//
+	//	// ここに色々計算するコードを書く
+	//
+	//}
+
+	// 変形後の頂点vの座標
+	glm::vec2 fa = v;	// ここも書き換えること
+
+	// ----課題ここから----
+
+	// Σp^T w p の計算
+	glm::mat2 pwp(0.0f);
+	for(int k = 0; k < m_iNcp; ++k){
+		int j = m_vCP[k];
+		glm::vec2 p = m_vP[j]-pc;
+
+		// 固定点と計算点の間の距離に基づく重み
+		double dist = glm::length2(m_vP[j]-v);	// 2乗距離
+		double w = (dist > 1.0e-6) ? 1.0/pow(dist, alpha) : 100000.0;
+
+		// Σ p^T w p の計算
+		pwp[0][0] += p[0]*w*p[0];
+		pwp[0][1] += p[0]*w*p[1];
+		pwp[1][0] += p[1]*w*p[0];
+		pwp[1][1] += p[1]*w*p[1];
+	}
+
+	// 逆行列の計算(エラー処理付き)
+	float d = glm::determinant(pwp);
+	if(d < 1e-6) return v-pc+qc;
+	glm::mat2 pwp_inv = glm::inverse(pwp);
+
+	// 横ベクトル×行列になるのでglmのオペレータ*は使わない(glmは縦ベクトルを前提としている)
+	glm::vec2 vp = v-pc;
+	glm::vec2 vppwp;
+	vppwp[0] = vp[0]*pwp_inv[0][0]+vp[1]*pwp_inv[1][0];
+	vppwp[1] = vp[0]*pwp_inv[0][1]+vp[1]*pwp_inv[1][1];
+
+	fa = glm::vec2(0.0f);
+	for(int k = 0; k < m_iNcp; ++k){
+		int j = m_vCP[k];
+		glm::vec2 p = m_vP[j]-pc;
+		glm::vec2 q = m_vX[j]-qc;
+
+		// 固定点と計算点の間の距離に基づく重み
+		double dist = glm::length2(m_vP[j]-v);	// 2乗距離
+		float w = (dist > 1.0e-6) ? 1.0/pow(dist, alpha) : 100000.0;
+
+		// Ajの計算
+		float Aj = glm::dot(vppwp, p);
+
+		// 変形後の位置
+		fa += Aj*w*q;
+	}
+	fa += qc;
+
+
+	//// Ajを使わないでスライドp43の式を直接計算する場合
+	//glm::mat2 pwp(0.0f);
+	//glm::mat2 pwq(0.0f);
+	//for(int k = 0; k < m_iNcp; ++k){
+	//	int j = m_vCP[k];
+	//	glm::vec2 p = m_vP[j]-pc;
+	//	glm::vec2 q = m_vX[j]-qc;
+
+	//	// 固定点と計算点の間の距離に基づく重み
+	//	double dist = glm::length2(p-v);	// 2乗距離
+	//	double w = (dist > 1.0e-6) ? 1.0/pow(dist, alpha) : 100000.0;
+
+	//	// Σ p^T w p の計算
+	//	pwp[0][0] += p[0]*w*p[0];
+	//	pwp[0][1] += p[0]*w*p[1];
+	//	pwp[1][0] += p[1]*w*p[0];
+	//	pwp[1][1] += p[1]*w*p[1];
+
+	//	// Σ p^T w q の計算
+	//	pwq[0][0] += p[0]*w*q[0];
+	//	pwq[0][1] += p[0]*w*q[1];
+	//	pwq[1][0] += p[1]*w*q[0];
+	//	pwq[1][1] += p[1]*w*q[1];
+	//}
+	//// 逆行列の計算(エラー処理付き)
+	//float d = glm::determinant(pwp);
+	//if(d < 1e-6) return v-pc+qc;
+	//glm::mat2 pwp_inv = glm::inverse(pwp);
+
+	//// 横ベクトル×行列になるのでglmのオペレータ*は使わない(glmは縦ベクトルを前提としている)
+	//glm::vec2 vp = v-pc;
+	//glm::vec2 vppwp;
+	//vppwp[0] = vp[0]*pwp_inv[0][0]+vp[1]*pwp_inv[1][0];
+	//vppwp[1] = vp[0]*pwp_inv[0][1]+vp[1]*pwp_inv[1][1];
+
+	//fa[0] = vppwp[0]*pwq[0][0]+vppwp[1]*pwq[1][0]+qc[0];
+	//fa[1] = vppwp[0]*pwq[0][1]+vppwp[1]*pwq[1][1]+qc[1];
+
+	// ----課題ここまで----
+
+
+	return fa;
+}
+
+/*!
+* メッシュ変形 by MLS
+*  - Similarity Deformation
+* @param[in] v 変形する頂点座標
+* @param[in] pc 制御点重心
+* @param[in] qc 変形後の制御点重心
+* @param[in] alpha 重みwを計算するための係数(w=1/(|p-v|^(2*alpha)))
+* @return 変形後の座標(f(v))
+*/
+glm::vec2 rxMeshDeform2D::similarityDeformation(const glm::vec2 &v, const glm::vec2 &pc, const glm::vec2 &qc, const double alpha)
+{
+	// TODO:この部分で 入力頂点座標v と 制御点座標p,q から入力頂点の変形後の座標を計算するコードを書く
+	// - μsを先に計算してから変形後の頂点位置を計算
+	// - 行列A_iの前計算は今回は行わないでもよい
+	// - 横ベクトル×行列の計算部分はglmのオペレータ*は使わない方がよい(glmは縦ベクトルを前提としている)
+
+	// 変形後の頂点vの座標
+	glm::vec2 fsv = v;	// ここも書き換えること
+
+	// ----課題ここから----
+
+	// v-p*
+	glm::vec2 vp = v-pc;
+
+	// μsの計算
+	double mus = 0.0;
+	for(int k = 0; k < m_iNcp; ++k){
+		int j = m_vCP[k];
+		glm::vec2 p = m_vP[j]-pc;
+
+		// 固定点と計算点の間の距離に基づく重み
+		double dist = glm::length2(m_vP[j]-v);
+		double w = (dist > 1.0e-6) ? 1.0/pow(dist, alpha) : 0.0;
+
+		mus += w*glm::dot(p, p);
+	}
+
+	// Similarity Deformationsによる座標値vの変換
+	fsv = glm::vec2(0.0f);
+	for(int k = 0; k < m_iNcp; ++k){
+		int j = m_vCP[k];
+
+		glm::vec2 p = m_vP[j]-pc;
+		glm::vec2 q = m_vX[j]-qc;
+
+		// 固定点と計算点の間の距離に基づく重み
+		double dist = glm::length2(m_vP[j]-v);
+		double w = (dist > 1.0e-6) ? 1.0/pow(dist, alpha) : 0.0;
+
+		// 行列Aiの計算
+		glm::mat2 A(0.0);
+		A[0][0] += w*(p[0]*vp[0]+p[1]*vp[1]);
+		A[0][1] += w*(p[0]*vp[1]-p[1]*vp[0]);
+		A[1][0] += w*(p[1]*vp[0]-p[0]*vp[1]);
+		A[1][1] += w*(p[1]*vp[1]+p[0]*vp[0]);
+
+		fsv[0] += (q[0]*A[0][0]+q[1]*A[1][0])/mus;
+		fsv[1] += (q[0]*A[0][1]+q[1]*A[1][1])/mus;
+	}
+	fsv += qc;
+
+	// ----課題ここまで----
+
+
+	return fsv;
+}
+
+/*!
+* メッシュ変形 by MLS
+*  - Rigid Deformation
+* @param[in] v 変形する頂点座標
+* @param[in] pc 制御点重心
+* @param[in] qc 変形後の制御点重心
+* @param[in] alpha 重みwを計算するための係数(w=1/(|p-v|^(2*alpha)))
+* @return 変形後の座標(f(v))
+*/
+glm::vec2 rxMeshDeform2D::rigidDeformation(const glm::vec2 &v, const glm::vec2 &pc, const glm::vec2 &qc, const double alpha)
+{
+	// TODO:この部分で 入力頂点座標v と 制御点座標p,q から入力頂点の変形後の座標を計算するコードを書く
+	// - μfを先に計算してから変形後の頂点位置を計算
+	// - 行列A_iの前計算は今回は行わないでもよい
+	// - 横ベクトル×行列の計算部分はglmのオペレータ*は使わない方がよい(glmは縦ベクトルを前提としている)
+
+	// 変形後の頂点vの座標
+	glm::vec2 frv = v;	// ここも書き換えること
+
+	// ----課題ここから----
+
+	// v-p*
+	glm::vec2 vp = v-pc;
+
+	// μrの計算
+	double wqp = 0.0, wqpp = 0.0;
+	for(int k = 0; k < m_iNcp; ++k){
+		int j = m_vCP[k];
+
+		glm::vec2 p = m_vP[j]-pc;
+		glm::vec2 q = m_vX[j]-qc;
+
+		// 固定点と計算点の間の距離に基づく重み
+		double dist = glm::length2(m_vP[j]-v);
+		double w = (dist > 1.0e-6) ? 1.0/pow(dist, alpha) : 0.0;
+
+		wqp += w*glm::dot(q, p);
+		wqpp += w*glm::dot(q, glm::vec2(-p[1], p[0]));
+	}
+	double mur = sqrt(wqp*wqp+wqpp*wqpp);
+
+	// Rigid Deformationsによる座標値vの変換
+	frv = glm::vec2(0.0f);
+	for(int k = 0; k < m_iNcp; ++k){
+		int j = m_vCP[k];
+
+		glm::vec2 p = m_vP[j]-pc;
+		glm::vec2 q = m_vX[j]-qc;
+
+		// 固定点と計算点の間の距離に基づく重み
+		double dist = glm::length2(m_vP[j]-v);
+		double w = (dist > 1.0e-6) ? 1.0/pow(dist, alpha) : 0.0;
+
+		// 行列Aiの計算
+		glm::mat2 A(0.0);
+		A[0][0] += w*(p[0]*vp[0]+p[1]*vp[1]);
+		A[0][1] += w*(p[0]*vp[1]-p[1]*vp[0]);
+		A[1][0] += w*(p[1]*vp[0]-p[0]*vp[1]);
+		A[1][1] += w*(p[1]*vp[1]+p[0]*vp[0]);
+
+		frv[0] += (q[0]*A[0][0]+q[1]*A[1][0])/mur;
+		frv[1] += (q[0]*A[0][1]+q[1]*A[1][1])/mur;
+	}
+	frv += qc;
+
+	// ----課題ここまで----
+
+	return frv;
+}
+
+
+
+/*!
+* メッシュ更新
+* @param[in] dt 時間ステップ幅(このメッシュ変形法では使わない)
+*/
+int rxMeshDeform2D::Update(double dt)
+{
+	if(m_iNcp <= 1) return 0;
+
+	// 各頂点を変形
+	for(int i = 0; i < m_iNv; ++i){
+		// 制御点はユーザー入力位置で固定なので処理をスキップ
+		if(std::find(m_vCP.begin(), m_vCP.end(), i) != m_vCP.end()) continue;
+
+		// 頂点の初期座標
+		const glm::vec2 &v = m_vP[i];
+
+		// 固定点の移動前，移動後の重み付き中心p*,q*の計算
+		glm::vec2 pc(0.0), qc(0.0);
+		double wsum = 0.0;
+		for(int k = 0; k < m_iNcp; ++k){
+			int j = m_vCP[k];
+			const glm::vec2 &p = m_vP[j];
+			const glm::vec2 &q = m_vX[j];
+
+			// 固定点と計算点の間の距離に基づく重み
+			double dist = glm::length2(p-v);
+			float w = (dist > 1.0e-6) ? 1.0f/pow(dist, m_alpha) : 0.0f;
+
+			pc += w*p;
+			qc += w*q;
+			wsum += w;
+		}
+		pc /= wsum;
+		qc /= wsum;
+
+		// MLS Deformations
+		switch(m_deform_type){
+		case 0: m_vX[i] = affineDeformation(v, pc, qc, m_alpha); break;
+		case 1: m_vX[i] = similarityDeformation(v, pc, qc, m_alpha); break;
+		case 2: m_vX[i] = rigidDeformation(v, pc, qc, m_alpha); break;
+		}
+	}
+
+	return 1;
+}
+
 
 
 //-----------------------------------------------------------------------------
@@ -334,311 +658,3 @@ void rxMeshDeform2D::generateRandomMesh(glm::vec2 c1, glm::vec2 c2, double min_d
 	}
 }
 
-
-/*!
-* メッシュ変形 by MLS
-*  - Affine Deformation
-* @param[in] v 変形する頂点座標
-* @param[in] pc 制御点重心
-* @param[in] qc 変形後の制御点重心
-* @param[in] alpha 重みwを計算するための係数(w=1/(|p-v|^(2*alpha)))
-* @return 変形後の座標(f(v))
-*/
-glm::vec2 rxMeshDeform2D::affineDeformation(const glm::vec2 &v, const glm::vec2 &pc, const glm::vec2 &qc, const double alpha)
-{
-	// TODO:この部分で 入力頂点座標v と 制御点座標p,q から入力頂点の変形後の座標を計算するコードを書く
-	// - 横ベクトル×行列の計算部分はglmのオペレータ*は使わない方がよい(glmは縦ベクトルを前提としている)
-	// - Ajを計算してから変形後の座標を計算するのでも，スライドp43の式を直接計算するのでもどちらでもOK
-	//   (Ajの前計算は今回は行わないでもよい)
-	//
-	// - 制御点でループして相対座標を計算するまでのコード例: 
-	//for(int k = 0; k < m_iNcp; ++k){	// 制御点数(m_iNcp)でループを回す
-	//	int j = m_vCP[k];	// 制御点の頂点インデックス
-	//
-	//	// 重心を中心とした制御点の相対座標
-	//	// 各頂点の座標は配列m_vPとm_vXに格納されている(それぞれ初期形状と変形後の形状)
-	//	glm::vec2 p = m_vP[j]-pc;	// 初期形状での座標
-	//	glm::vec2 q = m_vX[j]-qc;	// 変形後の座標
-	//
-	//	// ここに色々計算するコードを書く
-	//
-	//}
-
-	// 変形後の頂点vの座標
-	glm::vec2 fa = v;	// ここも書き換えること
-
-	// ----課題ここから----
-
-	// Σp^T w p の計算
-	glm::mat2 pwp(0.0f);
-	for(int k = 0; k < m_iNcp; ++k){
-		int j = m_vCP[k];
-		glm::vec2 p = m_vP[j]-pc;
-
-		// 固定点と計算点の間の距離に基づく重み
-		double dist = glm::length2(m_vP[j]-v);	// 2乗距離
-		double w = (dist > 1.0e-6) ? 1.0/pow(dist, alpha) : 100000.0;
-
-		// Σ p^T w p の計算
-		pwp[0][0] += p[0]*w*p[0];
-		pwp[0][1] += p[0]*w*p[1];
-		pwp[1][0] += p[1]*w*p[0];
-		pwp[1][1] += p[1]*w*p[1];
-	}
-
-	// 逆行列の計算(エラー処理付き)
-	float d = glm::determinant(pwp);
-	if(d < 1e-6) return v-pc+qc;
-	glm::mat2 pwp_inv = glm::inverse(pwp);
-
-	// 横ベクトル×行列になるのでglmのオペレータ*は使わない(glmは縦ベクトルを前提としている)
-	glm::vec2 vp = v-pc;
-	glm::vec2 vppwp;
-	vppwp[0] = vp[0]*pwp_inv[0][0]+vp[1]*pwp_inv[1][0];
-	vppwp[1] = vp[0]*pwp_inv[0][1]+vp[1]*pwp_inv[1][1];
-
-	fa = glm::vec2(0.0f);
-	for(int k = 0; k < m_iNcp; ++k){
-		int j = m_vCP[k];
-		glm::vec2 p = m_vP[j]-pc;
-		glm::vec2 q = m_vX[j]-qc;
-
-		// 固定点と計算点の間の距離に基づく重み
-		double dist = glm::length2(m_vP[j]-v);	// 2乗距離
-		float w = (dist > 1.0e-6) ? 1.0/pow(dist, alpha) : 100000.0;
-
-		// Ajの計算
-		float Aj = glm::dot(vppwp, p);
-
-		// 変形後の位置
-		fa += Aj*w*q;
-	}
-	fa += qc;
-
-
-	//// Ajを使わないでスライドp43の式を直接計算する場合
-	//glm::mat2 pwp(0.0f);
-	//glm::mat2 pwq(0.0f);
-	//for(int k = 0; k < m_iNcp; ++k){
-	//	int j = m_vCP[k];
-	//	glm::vec2 p = m_vP[j]-pc;
-	//	glm::vec2 q = m_vX[j]-qc;
-
-	//	// 固定点と計算点の間の距離に基づく重み
-	//	double dist = glm::length2(p-v);	// 2乗距離
-	//	double w = (dist > 1.0e-6) ? 1.0/pow(dist, alpha) : 100000.0;
-
-	//	// Σ p^T w p の計算
-	//	pwp[0][0] += p[0]*w*p[0];
-	//	pwp[0][1] += p[0]*w*p[1];
-	//	pwp[1][0] += p[1]*w*p[0];
-	//	pwp[1][1] += p[1]*w*p[1];
-
-	//	// Σ p^T w q の計算
-	//	pwq[0][0] += p[0]*w*q[0];
-	//	pwq[0][1] += p[0]*w*q[1];
-	//	pwq[1][0] += p[1]*w*q[0];
-	//	pwq[1][1] += p[1]*w*q[1];
-	//}
-	//// 逆行列の計算(エラー処理付き)
-	//float d = glm::determinant(pwp);
-	//if(d < 1e-6) return v-pc+qc;
-	//glm::mat2 pwp_inv = glm::inverse(pwp);
-
-	//// 横ベクトル×行列になるのでglmのオペレータ*は使わない(glmは縦ベクトルを前提としている)
-	//glm::vec2 vp = v-pc;
-	//glm::vec2 vppwp;
-	//vppwp[0] = vp[0]*pwp_inv[0][0]+vp[1]*pwp_inv[1][0];
-	//vppwp[1] = vp[0]*pwp_inv[0][1]+vp[1]*pwp_inv[1][1];
-
-	//fa[0] = vppwp[0]*pwq[0][0]+vppwp[1]*pwq[1][0]+qc[0];
-	//fa[1] = vppwp[0]*pwq[0][1]+vppwp[1]*pwq[1][1]+qc[1];
-
-	// ----課題ここまで----
-
-
-	return fa;
-}
-
-/*!
-* メッシュ変形 by MLS
-*  - Similarity Deformation
-* @param[in] v 変形する頂点座標
-* @param[in] pc 制御点重心
-* @param[in] qc 変形後の制御点重心
-* @param[in] alpha 重みwを計算するための係数(w=1/(|p-v|^(2*alpha)))
-* @return 変形後の座標(f(v))
-*/
-glm::vec2 rxMeshDeform2D::similarityDeformation(const glm::vec2 &v, const glm::vec2 &pc, const glm::vec2 &qc, const double alpha)
-{
-	// TODO:この部分で 入力頂点座標v と 制御点座標p,q から入力頂点の変形後の座標を計算するコードを書く
-	// - 横ベクトル×行列の計算部分はglmのオペレータ*は使わない方がよい(glmは縦ベクトルを前提としている)
-	// - μsを先に計算してから変形後の頂点位置を計算
-	// - 行列A_iの前計算は今回は行わないでもよい
-
-	// 変形後の頂点vの座標
-	glm::vec2 fsv = v;	// ここも書き換えること
-
-	// ----課題ここから----
-
-	// v-p*
-	glm::vec2 vp = v-pc;
-
-	// μsの計算
-	double mus = 0.0;
-	for(int k = 0; k < m_iNcp; ++k){
-		int j = m_vCP[k];
-		glm::vec2 p = m_vP[j]-pc;
-
-		// 固定点と計算点の間の距離に基づく重み
-		double dist = glm::length2(m_vP[j]-v);
-		double w = (dist > 1.0e-6) ? 1.0/pow(dist, alpha) : 0.0;
-
-		mus += w*glm::dot(p, p);
-	}
-
-	// Similarity Deformationsによる座標値vの変換
-	fsv = glm::vec2(0.0f);
-	for(int k = 0; k < m_iNcp; ++k){
-		int j = m_vCP[k];
-
-		glm::vec2 p = m_vP[j]-pc;
-		glm::vec2 q = m_vX[j]-qc;
-
-		// 固定点と計算点の間の距離に基づく重み
-		double dist = glm::length2(m_vP[j]-v);
-		double w = (dist > 1.0e-6) ? 1.0/pow(dist, alpha) : 0.0;
-
-		// 行列Aiの計算
-		glm::mat2 A(0.0);
-		A[0][0] += w*(p[0]*vp[0]+p[1]*vp[1]);
-		A[0][1] += w*(p[0]*vp[1]-p[1]*vp[0]);
-		A[1][0] += w*(p[1]*vp[0]-p[0]*vp[1]);
-		A[1][1] += w*(p[1]*vp[1]+p[0]*vp[0]);
-
-		fsv[0] += (q[0]*A[0][0]+q[1]*A[1][0])/mus;
-		fsv[1] += (q[0]*A[0][1]+q[1]*A[1][1])/mus;
-	}
-	fsv += qc;
-
-	// ----課題ここまで----
-
-
-	return fsv;
-}
-
-/*!
-* メッシュ変形 by MLS
-*  - Rigid Deformation
-* @param[in] v 変形する頂点座標
-* @param[in] pc 制御点重心
-* @param[in] qc 変形後の制御点重心
-* @param[in] alpha 重みwを計算するための係数(w=1/(|p-v|^(2*alpha)))
-* @return 変形後の座標(f(v))
-*/
-glm::vec2 rxMeshDeform2D::rigidDeformation(const glm::vec2 &v, const glm::vec2 &pc, const glm::vec2 &qc, const double alpha)
-{
-	// TODO:この部分で 入力頂点座標v と 制御点座標p,q から入力頂点の変形後の座標を計算するコードを書く
-	// - 横ベクトル×行列の計算部分はglmのオペレータ*は使わない方がよい(glmは縦ベクトルを前提としている)
-	// - μfを先に計算してから変形後の頂点位置を計算
-	// - 行列A_iの前計算は今回は行わないでもよい
-
-	// 変形後の頂点vの座標
-	glm::vec2 frv = v;	// ここも書き換えること
-
-	// ----課題ここから----
-
-	// v-p*
-	glm::vec2 vp = v-pc;
-
-	// μrの計算
-	double wqp = 0.0, wqpp = 0.0;
-	for(int k = 0; k < m_iNcp; ++k){
-		int j = m_vCP[k];
-
-		glm::vec2 p = m_vP[j]-pc;
-		glm::vec2 q = m_vX[j]-qc;
-
-		// 固定点と計算点の間の距離に基づく重み
-		double dist = glm::length2(m_vP[j]-v);
-		double w = (dist > 1.0e-6) ? 1.0/pow(dist, alpha) : 0.0;
-
-		wqp += w*glm::dot(q, p);
-		wqpp += w*glm::dot(q, glm::vec2(-p[1], p[0]));
-	}
-	double mur = sqrt(wqp*wqp+wqpp*wqpp);
-
-	// Rigid Deformationsによる座標値vの変換
-	frv = glm::vec2(0.0f);
-	for(int k = 0; k < m_iNcp; ++k){
-		int j = m_vCP[k];
-
-		glm::vec2 p = m_vP[j]-pc;
-		glm::vec2 q = m_vX[j]-qc;
-
-		// 固定点と計算点の間の距離に基づく重み
-		double dist = glm::length2(m_vP[j]-v);
-		double w = (dist > 1.0e-6) ? 1.0/pow(dist, alpha) : 0.0;
-
-		// 行列Aiの計算
-		glm::mat2 A(0.0);
-		A[0][0] += w*(p[0]*vp[0]+p[1]*vp[1]);
-		A[0][1] += w*(p[0]*vp[1]-p[1]*vp[0]);
-		A[1][0] += w*(p[1]*vp[0]-p[0]*vp[1]);
-		A[1][1] += w*(p[1]*vp[1]+p[0]*vp[0]);
-
-		frv[0] += (q[0]*A[0][0]+q[1]*A[1][0])/mur;
-		frv[1] += (q[0]*A[0][1]+q[1]*A[1][1])/mur;
-	}
-	frv += qc;
-
-	// ----課題ここまで----
-
-	return frv;
-}
-
-/*!
-* メッシュ更新
-* @param[in] dt 時間ステップ幅(このメッシュ変形法では使わない)
-*/
-int rxMeshDeform2D::Update(double dt)
-{
-	if(m_iNcp <= 1) return 0;
-
-	// 各頂点を変形
-	for(int i = 0; i < m_iNv; ++i){
-		// 制御点はユーザー入力位置で固定なので処理をスキップ
-		if(std::find(m_vCP.begin(), m_vCP.end(), i) != m_vCP.end()) continue;
-
-		// 頂点の初期座標
-		const glm::vec2 &v = m_vP[i];
-
-		// 固定点の移動前，移動後の重み付き中心p*,q*の計算
-		glm::vec2 pc(0.0), qc(0.0);
-		double wsum = 0.0;
-		for(int k = 0; k < m_iNcp; ++k){
-			int j = m_vCP[k];
-			const glm::vec2 &p = m_vP[j];
-			const glm::vec2 &q = m_vX[j];
-
-			// 固定点と計算点の間の距離に基づく重み
-			double dist = glm::length2(p-v);
-			float w = (dist > 1.0e-6) ? 1.0f/pow(dist, m_alpha) : 0.0f;
-
-			pc += w*p;
-			qc += w*q;
-			wsum += w;
-		}
-		pc /= wsum;
-		qc /= wsum;
-
-		// MLS Deformations
-		switch(m_deform_type){
-		case 0: m_vX[i] = affineDeformation(v, pc, qc, m_alpha); break;
-		case 1: m_vX[i] = similarityDeformation(v, pc, qc, m_alpha); break;
-		case 2: m_vX[i] = rigidDeformation(v, pc, qc, m_alpha); break;
-		}
-	}
-
-	return 1;
-}

@@ -574,6 +574,105 @@ static int MkDir(string dir)
 }
 
 
+//! ファイルパス検索用(made by 金森先生)
+// [How to use]
+// PathFinder p;
+// p.addSearchPath("bin");
+// p.addSearchPath("../bin");
+// p.addSearchPath("../../bin");
+// std::string filename = p.find("sample.bmp");
+class PathFinder
+{
+public:
+	void addSearchPath(const std::string& dirname) { m_SearchDirs.push_back(dirname); }
+
+	std::string find(const std::string& filename, const std::string& separator = "/")
+	{
+		FILE* fp = 0;
+		std::string path_name;
+
+		for(unsigned int i = 0; i < m_SearchDirs.size(); i++)
+		{
+			path_name = m_SearchDirs[i] + separator + filename;
+#ifdef _WIN32
+			::fopen_s(&fp, path_name.c_str(), "r");
+#else
+			fp = fopen(path_name.c_str(), "r");
+#endif
+
+			if(fp != 0)
+			{
+				fclose(fp);
+				return path_name;
+			}
+		}
+
+		path_name = filename;
+#ifdef _WIN32
+		::fopen_s(&fp, path_name.c_str(), "r");
+#else
+		fp = fopen(path_name.c_str(), "r");
+#endif
+
+		if(fp != 0)
+		{
+			fclose(fp);
+			return path_name;
+		}
+
+		printf("file not found: %s\n", filename.c_str());
+
+		return "";
+	}
+
+private:
+	std::vector<std::string> m_SearchDirs;
+};
+
+//! OpenGLのエラーチェック(made by 金森先生)
+// see https://www.khronos.org/registry/OpenGL-Refpages/gl4/html/glGetError.xhtml
+static inline void CheckGLError(const char *func, const char *file, int line)
+{
+	GLenum errCode = glGetError();
+
+	if(errCode != GL_NO_ERROR)
+	{
+		std::cerr << func << ": OpenGL Error: ";
+
+		switch(errCode)
+		{
+		case GL_INVALID_ENUM:
+			std::cerr << "GL_INVALID_ENUM: An unacceptable value is specified for an enumerated argument";
+			break;
+		case GL_INVALID_VALUE:
+			std::cerr << "GL_INVALID_VALUE: A numeric argument is out of range";
+			break;
+		case GL_INVALID_OPERATION:
+			std::cerr << "GL_INVALID_OPERATION: The specified operation is not allowed in the current state";
+			break;
+		case GL_STACK_OVERFLOW:
+			std::cerr << "GL_STACK_OVERFLOW: This command would cause a stack overflow";
+			break;
+		case GL_STACK_UNDERFLOW:
+			std::cerr << "GL_STACK_UNDERFLOW: This command would cause a stack underflow";
+			break;
+		case GL_OUT_OF_MEMORY:
+			std::cerr << "GL_OUT_OF_MEMORY: There is not enough memory left to execute the command";
+			break;
+		case GL_TABLE_TOO_LARGE:
+			std::cerr << "GL_TABLE_TOO_LARGE: The specified table exceeds the implementation's maximum supported table size";
+			break;
+		default:
+			std::cerr << "Unknown command, error code = " << std::showbase << std::hex << errCode;
+			break;
+		}
+
+		std::cerr << " (file: " << file << " at line " << line << std::endl;
+	}
+}
+#define CHECK_GL_ERROR CheckGLError(__FUNCTION__, __FILE__, __LINE__)
+
+
 //-----------------------------------------------------------------------------
 // テクスチャ関連
 //-----------------------------------------------------------------------------

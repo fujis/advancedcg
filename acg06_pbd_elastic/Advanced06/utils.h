@@ -899,8 +899,15 @@ static inline void drawFloor(glm::vec3 light_pos, glm::vec3 light_color, float y
 	static GLuint texFloor = 0;				//!< 床のテクスチャ
 	static GLuint texFloorShadow = 0;		//!< 床の影用テクスチャ(まだ未実装)
 	if(init){
+		// ファイルパス検索
+		PathFinder p;
+		p.addSearchPath(".");
+		p.addSearchPath("bin");
+		p.addSearchPath("../bin");
+		p.addSearchPath("../../bin");
+
 		// シェーダの初期化(最初の呼び出し時だけ実行)
-		glslFloor = CreateGLSLFromFile("shaders/floor.vp", "shaders/floor.fp", "floor");
+		glslFloor = CreateGLSLFromFile(p.find("shaders/floor.vp"), p.find("shaders/floor.fp"), "floor");
 		init = false;
 
 		// 床テクスチャ読み込み

@@ -1,7 +1,7 @@
 /*!
-  @file rx_bvh.cpp
+  @file characteranimation.cpp
 
-  @brief BVH File Input
+  @brief BVHファイルに基づくキャラクターアニメーション
 
   @author Makoto Fujisawa
   @date   2021-02
@@ -20,20 +20,195 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/quaternion.hpp>
 
+
+//-----------------------------------------------------------------------------
+// 課題用関数
+//-----------------------------------------------------------------------------
 /*!
- * 文字列中の改行記号削除
- * @param[inout] 文字列
- */
-static inline void DeleteEOL(std::string &str)
+* スケルトンの動きに合わせてメッシュ頂点を移動
+* - LBSによるスキニング
+* @param[in] step 現在のステップ数
+* @param[inout] vrts 頂点座標が格納されたベクトル
+* @param[in] weights vrtsと同じ大きさの配列で各頂点の重みを格納
+*/
+int CharacterAnimation::skinningLBS(vector<glm::vec3> &vrts, const vector< map<int, double> > &weights)
 {
-	const char CR = '\r';
-	const char LF = '\n';
-	std::string str1;
-	for(std::string::const_iterator itr = str.begin(); itr != str.end(); ++itr){
-		if(*itr != CR && *itr != LF) str1 += *itr;
+	// 頂点毎に変換行列を重みをかけながら適用
+	int nv = (int)(vrts.size());
+	for(int i = 0; i < nv; ++i){
+		const int n_joints = static_cast<int>(weights[i].size());	// 頂点vに対応するジョイント数
+		glm::vec4 v(vrts[i][0], vrts[i][1], vrts[i][2], 1.0);	// 更新前(オリジナル)のスキンメッシュ頂点位置
+		glm::vec4 v_new = v;	// 更新後のスキンメッシュ頂点位置
+
+		// TODO:この部分にLBSによる頂点位置の計算を書く
+		// ・変数v_newにスキンメッシュ頂点vのLBSによる更新後の位置を格納する
+		// ・元の頂点座標は3次元ベクトル(glm::vec3)として格納されているが，
+		//   4x4行列との演算のために4次元ベクトル(glm::vec4)に変換していることに注意
+		// ・頂点vに対応するジョイント番号とその重みは以下のようにして取得できる
+		//	map<int, double>::const_iterator itr = weights[i].begin();
+		//	for(; itr != weights[i].end(); ++itr){
+		//		int j = itr->first;	// ジョイント番号
+		//		float wij = static_cast<float>(itr->second);	// 重み
+		//		// ここにジョイントjに関する処理を書く
+		//
+		//	}
+		// ・ジョイントjのrest(bind) poseでのワールド変換行列(スライドp28のBj)は
+		//    m_joints[j].B
+		//   に格納されており，回転を含むワールド変換行列(スライドp28のWj)は
+		//    m_joints[j].W
+		//   に格納されている(どちらもglm::mat4型)
+		// [glmでのベクトル・行列演算について]
+		// ・glm::mat4 M(0.0f) と定義時に引数に0を指定すると0で初期化，
+		//   glm::mat4 M(1.0f) と指定すると単位行列で初期化される(LBSでは行列WB^-1を足していくので単位行列ではなく...)
+		// ・glmでの行列Mとベクトルvの掛け算は単純に M*v でよい(結果のベクトルが返ってくる)
+		// ・glmでの逆行列計算は glm::inverse() を使うと良い
+
+		// ----課題ここから----
+
+		glm::mat4 blend_mat(0.0f);
+		map<int, double>::const_iterator itr = weights[i].begin();
+		for(; itr != weights[i].end(); ++itr){
+			int j = itr->first;
+			float wij = static_cast<float>(itr->second);
+			glm::mat4 Bj = m_joints[j].B;
+			glm::mat4 Wj = m_joints[j].W;
+			glm::mat4 Tj = Wj*(glm::inverse(Bj));
+
+			blend_mat += wij*Tj;
+		}
+		v_new = blend_mat*v;
+
+		// ----課題ここまで----
+
+		vrts[i] = glm::vec3(v_new[0], v_new[1], v_new[2]);
 	}
-	str = str1;
+
+	return 1;
 }
+
+/*!
+* スケルトンの動きに合わせてメッシュ頂点を移動
+* - DQSによるスキニング
+* @param[in] step 現在のステップ数
+* @param[inout] vrts 頂点座標が格納されたベクトル
+* @param[in] weights vrtsと同じ大きさの配列で各頂点の重みを格納
+*/
+int CharacterAnimation::skinningDQS(vector<glm::vec3> &vrts, const vector< map<int, double> > &weights)
+{
+	// 頂点毎に変換DQを重みをかけながら適用
+	int nv = (int)(vrts.size());
+	for(int i = 0; i < nv; ++i){
+		const int n_joints = static_cast<int>(weights[i].size());	// 頂点vに対応するジョイント数
+		glm::vec3 v = vrts[i];	// 更新前(オリジナル)のスキンメッシュ頂点位置
+		glm::vec3 v_new = v;	// 更新後のスキンメッシュ頂点位置
+
+		// TODO:この部分にDQSによる頂点位置の計算を書く
+		// ・変数v_newにスキンメッシュ頂点vのDQSによる更新後の位置を格納する
+		// ・LBSと違って4x4行列との掛け算はない(全て四元数との演算)ため，
+		//   こちらではglm::vec3として頂点座標を取り出していることに注意
+		// ・頂点vに対応するジョイント番号とその重みは以下のようにして取得できる
+		//	map<int, double>::const_iterator itr = weights[i].begin();
+		//	for(; itr != weights[i].end(); ++itr){
+		//		int j = itr->first;	// ジョイント番号
+		//		float wij = static_cast<float>(itr->second);	// 重み
+		//		// ここにジョイントjに関する処理を書く
+		//
+		//	}
+		// ・ジョイントjのrest(bind) poseでのワールド変換行列(スライドp28のBj)は
+		//    m_joints[j].B
+		//   に格納されており，回転を含むワールド変換行列(スライドp28のWj)は
+		//    m_joints[j].W
+		//   に格納されている(どちらもglm::mat4型)
+		// ・四元数や行列については授業スライドの最後の方の説明を参照すること
+		// ・Dual Quaternionを扱うための，DualQuaternion型を定義してある(dualquaternion.h)ので自由に使ってください．
+		//   基本的な演算は定義してありますが，頂点vのDual Quaternionによる変換は定義されていないので自分でここに実装してください．
+
+		// ----課題ここから----
+
+		// 行列をDual Quaternionにその都度変換するだけ
+		DualQuaternion dq_blend(glm::quat(0, 0, 0, 0), glm::quat(0, 0, 0, 0));
+		map<int, double>::const_iterator itr = weights[i].begin();
+		for(; itr != weights[i].end(); ++itr){
+			int bone = itr->first;
+			float wij = static_cast<float>(itr->second);
+			glm::mat4 Bj = m_joints[bone].B;
+			glm::mat4 Wj = m_joints[bone].W;
+			glm::mat4 Tj = Wj*(glm::inverse(Bj));
+
+			// 行列からの変換
+			glm::quat q_real(Tj);		// mat4から回転を表す四元数を取り出す
+			glm::vec3 v_trans(Tj[3]);	// mat4から平行移動ベクトルを取り出す
+			DualQuaternion dq(q_real, v_trans);
+
+			dq_blend += wij*dq;
+		}
+		dq_blend.normalize();
+
+		// Dual Quaternionで頂点vを回転するために平行移動量を取り出し
+		glm::quat q_trans = 2.0f*dq_blend.getTranslation()*glm::conjugate(dq_blend.getRotation());
+		glm::vec3 trans(q_trans.x, q_trans.y, q_trans.z);
+
+		// glmでの四元数(glm::quat)とベクトル(glm::vec3)の掛け算(*)はそのベクトルを四元数で回転させる(qvq*)
+		v_new = dq_blend.getRotation()*v+trans;
+
+		//---------------------
+
+		//map<int, double>::const_iterator itr = weights[i].begin();
+		//DualQuaternion sigma(glm::quat(0, 0, 0, 0), glm::quat(0, 0, 0, 0));
+		//for(; itr != weights[i].end(); ++itr){
+		//	int j = itr->first;	// ジョイント番号
+		//	float wij = static_cast<float>(itr->second);	// 重み
+		//	// ここにジョイントjに関する処理を書く
+		//	glm::mat4 WB = m_joints[j].W * glm::inverse(m_joints[j].B);
+		//	glm::mat3 WBrot = glm::mat3(WB);
+		//	glm::quat qj = glm::toQuat(WBrot);
+		//	glm::vec3 tj = glm::vec3(WB[3]);
+		//	DualQuaternion qjDual;
+		//	qjDual.m_real = qj;
+		//	qjDual.m_dual = 0.5 * glm::quat(0, tj) * qj;
+		//	sigma += wij * qjDual;
+		//}
+		//DualQuaternion sigmaCon;
+		//sigmaCon.m_real = glm::conjugate(sigma.m_real);
+		//sigmaCon.m_dual = glm::conjugate(sigma.m_dual);
+		//DualQuaternion qi = sigma / (sigma * sigmaCon);
+		////sigma.normalize();
+		////DualQuaternion qi = sigma;
+		//glm::quat q = qi.m_real * glm::quat(0, v) * glm::conjugate(qi.m_real) + 2.0f * qi.m_dual * glm::conjugate(qi.m_real);
+		//v_new = glm::vec3(q.x, q.y, q.z);
+
+		// ----課題ここまで----
+
+		vrts[i] = glm::vec3(v_new[0], v_new[1], v_new[2]);
+	}
+
+	return 1;
+}
+
+/*!
+* スケルトンの動きに合わせてメッシュ頂点を移動
+* @param[in] step 現在のステップ数
+* @param[inout] vrts 頂点座標が格納されたベクトル
+* @param[in] weights vrtsと同じ大きさの配列で各頂点の重みを格納
+*/
+int CharacterAnimation::Skinning(int step, vector<glm::vec3> &vrts, const vector< map<int, double> > &weights)
+{
+	if(m_joints.empty()) return 0;
+
+	// グローバル変換行列を計算
+	calTransMatrices(step, 1.0);
+
+	// スキニング
+	switch(m_skinning){
+	default:
+	case 0:
+		return skinningLBS(vrts, weights);
+	case 1:
+		return skinningDQS(vrts, weights);
+	}
+}
+
+
 
 
 //-----------------------------------------------------------------------------
@@ -52,6 +227,8 @@ CharacterAnimation::CharacterAnimation(void)
 	// 本当はVAOで描画をしていたがmac上でimgui_opengl2+vaoが上手く動かないため，メッシュ生成に切り替え
 	int nvrts, ntris;
 	vector<int> tris;
+
+	// 球形状を表すポリゴンを作ってVBO登録(関節描画用)
 	MakeSphere(nvrts, m_sphere.vertices, m_sphere.normals, ntris, tris, 0.5, 32, 16);
 	rxFace f;
 	f.resize(3);
@@ -60,6 +237,8 @@ CharacterAnimation::CharacterAnimation(void)
 		m_sphere.faces.push_back(f);
 	}
 	tris.clear();
+
+	// 円筒形状を表すポリゴンを作ってVBO登録(ボーン描画用)
 	MakeCylinder(nvrts, m_cylinder.vertices, m_cylinder.normals, ntris, tris, 0.5, 1.0, 32, 16);
 	for(int i = 0; i < ntris; ++i){
 		f[0] = tris[3*i]; f[1] = tris[3*i+1]; f[2] = tris[3*i+2];
@@ -74,6 +253,8 @@ CharacterAnimation::CharacterAnimation(void)
 CharacterAnimation::~CharacterAnimation()
 {
 }
+
+
 
 /*!
  * BVHファイル読み込み
@@ -777,184 +958,3 @@ int CharacterAnimation::calTransMatrices(int step, float scale)
 }
 
 
-/*!
-* スケルトンの動きに合わせてメッシュ頂点を移動
-* - LBSによるスキニング
-* @param[in] step 現在のステップ数
-* @param[inout] vrts 頂点座標が格納されたベクトル
-* @param[in] weights vrtsと同じ大きさの配列で各頂点の重みを格納
-*/
-int CharacterAnimation::skinningLBS(vector<glm::vec3> &vrts, const vector< map<int, double> > &weights)
-{
-	// 頂点毎に変換行列を重みをかけながら適用
-	int nv = (int)(vrts.size());
-	for(int i = 0; i < nv; ++i){
-		const int n_joints = static_cast<int>(weights[i].size());	// 頂点vに対応するジョイント数
-		glm::vec4 v(vrts[i][0], vrts[i][1], vrts[i][2], 1.0);	// 更新前(オリジナル)のスキンメッシュ頂点位置
-		glm::vec4 v_new = v;	// 更新後のスキンメッシュ頂点位置
-
-		// TODO:この部分にLBSによる頂点位置の計算を書く
-		// ・変数v_newにスキンメッシュ頂点vのLBSによる更新後の位置を格納する
-		// ・元の頂点座標は3次元ベクトル(glm::vec3)として格納されているが，
-		//   4x4行列との演算のために4次元ベクトル(glm::vec4)に変換していることに注意
-		// ・頂点vに対応するジョイント番号とその重みは以下のようにして取得できる
-		//	map<int, double>::const_iterator itr = weights[i].begin();
-		//	for(; itr != weights[i].end(); ++itr){
-		//		int j = itr->first;	// ジョイント番号
-		//		float wij = static_cast<float>(itr->second);	// 重み
-		//		// ここにジョイントjに関する処理を書く
-		//
-		//	}
-		// ・ジョイントjのrest(bind) poseでのワールド変換行列(スライドp28のBj)は
-		//    m_joints[j].B
-		//   に格納されており，回転を含むワールド変換行列(スライドp28のWj)は
-		//    m_joints[j].W
-		//   に格納されている(どちらもglm::mat4型)
-		// [glmでのベクトル・行列演算について]
-		// ・glm::mat4 M(0.0f) と定義時に引数に0を指定すると0で初期化，
-		//   glm::mat4 M(1.0f) と指定すると単位行列で初期化される(LBSでは行列WB^-1を足していくので単位行列ではなく...)
-		// ・glmでの行列Mとベクトルvの掛け算は単純に M*v でよい(結果のベクトルが返ってくる)
-		// ・glmでの逆行列計算は glm::inverse() を使うと良い
-
-		// ----課題ここから----
-		glm::mat4 blend_mat(0.0f);
-		map<int, double>::const_iterator itr = weights[i].begin();
-		for(; itr != weights[i].end(); ++itr){
-			int j = itr->first;
-			float wij = static_cast<float>(itr->second);
-			glm::mat4 Bj = m_joints[j].B;
-			glm::mat4 Wj = m_joints[j].W;
-			glm::mat4 Tj = Wj*(glm::inverse(Bj));
-
-			blend_mat += wij*Tj;
-		}
-		v_new = blend_mat*v;
-		// ----課題ここまで----
-
-		vrts[i] = glm::vec3(v_new[0], v_new[1], v_new[2]);
-	}
-
-	return 1;
-}
-
-/*!
-* スケルトンの動きに合わせてメッシュ頂点を移動
-* - DQSによるスキニング
-* @param[in] step 現在のステップ数
-* @param[inout] vrts 頂点座標が格納されたベクトル
-* @param[in] weights vrtsと同じ大きさの配列で各頂点の重みを格納
-*/
-int CharacterAnimation::skinningDQS(vector<glm::vec3> &vrts, const vector< map<int, double> > &weights)
-{
-	// 頂点毎に変換DQを重みをかけながら適用
-	int nv = (int)(vrts.size());
-	for(int i = 0; i < nv; ++i){
-		const int n_joints = static_cast<int>(weights[i].size());	// 頂点vに対応するジョイント数
-		glm::vec3 v = vrts[i];	// 更新前(オリジナル)のスキンメッシュ頂点位置
-		glm::vec3 v_new = v;	// 更新後のスキンメッシュ頂点位置
-
-		// TODO:この部分にDQSによる頂点位置の計算を書く
-		// ・変数v_newにスキンメッシュ頂点vのDQSによる更新後の位置を格納する
-		// ・LBSと違って4x4行列との掛け算はない(全て四元数との演算)ため，
-		//   こちらではglm::vec3として頂点座標を取り出していることに注意
-		// ・頂点vに対応するジョイント番号とその重みは以下のようにして取得できる
-		//	map<int, double>::const_iterator itr = weights[i].begin();
-		//	for(; itr != weights[i].end(); ++itr){
-		//		int j = itr->first;	// ジョイント番号
-		//		float wij = static_cast<float>(itr->second);	// 重み
-		//		// ここにジョイントjに関する処理を書く
-		//
-		//	}
-		// ・ジョイントjのrest(bind) poseでのワールド変換行列(スライドp28のBj)は
-		//    m_joints[j].B
-		//   に格納されており，回転を含むワールド変換行列(スライドp28のWj)は
-		//    m_joints[j].W
-		//   に格納されている(どちらもglm::mat4型)
-		// ・四元数や行列については授業スライドの最後の方の説明を参照すること
-		// ・Dual Quaternionを扱うための，DualQuaternion型を定義してある(dualquaternion.h)ので自由に使ってください．
-		//   基本的な演算は定義してありますが，頂点vのDual Quaternionによる変換は定義されていないので自分でここに実装してください．
-
-		// ----課題ここから----
-
-		// 行列をDual Quaternionにその都度変換するだけ
-		DualQuaternion dq_blend(glm::quat(0, 0, 0, 0), glm::quat(0, 0, 0, 0));
-		map<int, double>::const_iterator itr = weights[i].begin();
-		for(; itr != weights[i].end(); ++itr){
-			int bone = itr->first;
-			float wij = static_cast<float>(itr->second);
-			glm::mat4 Bj = m_joints[bone].B;
-			glm::mat4 Wj = m_joints[bone].W;
-			glm::mat4 Tj = Wj*(glm::inverse(Bj));
-
-			// 行列からの変換
-			glm::quat q_real(Tj);		// mat4から回転を表す四元数を取り出す
-			glm::vec3 v_trans(Tj[3]);	// mat4から平行移動ベクトルを取り出す
-			DualQuaternion dq(q_real, v_trans);
-
-			dq_blend += wij*dq;
-		}
-		dq_blend.normalize();
-
-		// Dual Quaternionで頂点vを回転するために平行移動量を取り出し
-		glm::quat q_trans = 2.0f*dq_blend.getTranslation()*glm::conjugate(dq_blend.getRotation());
-		glm::vec3 trans(q_trans.x, q_trans.y, q_trans.z);
-
-		// glmでの四元数(glm::quat)とベクトル(glm::vec3)の掛け算(*)はそのベクトルを四元数で回転させる(qvq*)
-		v_new = dq_blend.getRotation()*v+trans;
-
-		//---------------------
-
-		//map<int, double>::const_iterator itr = weights[i].begin();
-		//DualQuaternion sigma(glm::quat(0, 0, 0, 0), glm::quat(0, 0, 0, 0));
-		//for(; itr != weights[i].end(); ++itr){
-		//	int j = itr->first;	// ジョイント番号
-		//	float wij = static_cast<float>(itr->second);	// 重み
-		//	// ここにジョイントjに関する処理を書く
-		//	glm::mat4 WB = m_joints[j].W * glm::inverse(m_joints[j].B);
-		//	glm::mat3 WBrot = glm::mat3(WB);
-		//	glm::quat qj = glm::toQuat(WBrot);
-		//	glm::vec3 tj = glm::vec3(WB[3]);
-		//	DualQuaternion qjDual;
-		//	qjDual.m_real = qj;
-		//	qjDual.m_dual = 0.5 * glm::quat(0, tj) * qj;
-		//	sigma += wij * qjDual;
-		//}
-		//DualQuaternion sigmaCon;
-		//sigmaCon.m_real = glm::conjugate(sigma.m_real);
-		//sigmaCon.m_dual = glm::conjugate(sigma.m_dual);
-		//DualQuaternion qi = sigma / (sigma * sigmaCon);
-		////sigma.normalize();
-		////DualQuaternion qi = sigma;
-		//glm::quat q = qi.m_real * glm::quat(0, v) * glm::conjugate(qi.m_real) + 2.0f * qi.m_dual * glm::conjugate(qi.m_real);
-		//v_new = glm::vec3(q.x, q.y, q.z);
-
-		// ----課題ここまで----
-
-		vrts[i] = glm::vec3(v_new[0], v_new[1], v_new[2]);
-	}
-
-	return 1;
-}
-
-/*!
-* スケルトンの動きに合わせてメッシュ頂点を移動
-* @param[in] step 現在のステップ数
-* @param[inout] vrts 頂点座標が格納されたベクトル
-* @param[in] weights vrtsと同じ大きさの配列で各頂点の重みを格納
-*/
-int CharacterAnimation::Skinning(int step, vector<glm::vec3> &vrts, const vector< map<int, double> > &weights)
-{
-	if(m_joints.empty()) return 0;
-
-	// グローバル変換行列を計算
-	calTransMatrices(step, 1.0);
-
-	// スキニング
-	switch(m_skinning){
-	default:
-	case 0:
-		return skinningLBS(vrts, weights);
-	case 1:
-		return skinningDQS(vrts, weights);
-	}
-}

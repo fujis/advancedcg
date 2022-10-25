@@ -1,33 +1,33 @@
-# コンパイラ
+# Compiler
 COMPILER = g++
 CXXFLAGS = -O3 -std=c++11
 
-# ライブラリ関係
-LDFLAGS = -lglfw -lGLEW -framework OpenGL
+# library-related parameters
+LDFLAGS = -L/opt/local/lib -lglfw -lGLEW -framework OpenGL
 LIBS    = 
 
-# インクルードフォルダ
+# Include folder specification
 INCLUDE = -I../include -I./imgui
 
-# 生成バイナリファイル名＆ディレクトリ
-TARGETS = advanced05
+# Generated binary file name & directory
+TARGETS = acg
 TARGETDIR = ../bin
 
-# ソースファイルの場所(サブフォルダも走査して*.cppファイルをリスト化)
+# Location of source files (it scan subfolders to make a list of *.cpp files)
 SRCROOT   = .
 SRCDIRS  := $(shell find $(SRCROOT) -type d)
 SOURCES   = $(foreach dir, $(SRCDIRS), $(wildcard $(dir)/*.cpp))
 
-# 中間ファイル(*.o)を置く場所&ファイル名(cppファイルから決定)
+# Location to put intermediate file (*.o) & its file name (it's automatically determined from cpp file)
 OBJROOT   = .
 OBJECTS   = $(addprefix $(OBJROOT)/, $(SOURCES:.cpp=.o)) 
 OBJDIRS   = $(addprefix $(OBJROOT)/, $(SRCDIRS)) 
 
-# 実行ファイルの作成
+# Command to build a executable file
 $(TARGETS): $(OBJECTS) $(LIBS)
 	$(COMPILER) -o $(TARGETDIR)/$@ $^ $(LDFLAGS)
 
-# 中間バイナリのディレクトリを掘りながら.cppを中間ファイル.oに
+# Scannning the directory of intermediate files and compile *.cpp to intermediate file *.o, 
 $(OBJROOT)/%.o: $(SRCROOT)/%.cpp
 	@if [ ! -e `dirname $@` ]; then mkdir -p `dirname $@`; fi
 	$(COMPILER) $(CXXFLAGS) $(INCLUDE) -o $@ -c $<

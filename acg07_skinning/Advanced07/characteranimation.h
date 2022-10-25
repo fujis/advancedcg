@@ -1,7 +1,7 @@
 /*!
-  @file rx_bvh.h
+  @file characteranimation.h
 	
-  @brief BVH File Input
+  @brief BVHファイルに基づくキャラクターアニメーション
 
   @author Makoto Fujisawa
   @date   2021-02
@@ -140,6 +140,21 @@ private:
 	int skinningDQS(vector<glm::vec3> &vrts, const vector< map<int, double> > &weights);
 };
 
+
+/*!
+ * 文字列中の改行記号削除
+ * @param[inout] 文字列
+ */
+static inline void DeleteEOL(std::string &str)
+{
+	const char CR = '\r';
+	const char LF = '\n';
+	std::string str1;
+	for(std::string::const_iterator itr = str.begin(); itr != str.end(); ++itr){
+		if(*itr != CR && *itr != LF) str1 += *itr;
+	}
+	str = str1;
+}
 
 
 #endif // _RX_BVH_H_

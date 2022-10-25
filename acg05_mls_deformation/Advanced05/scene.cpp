@@ -91,11 +91,19 @@ void SceneMLS::Init(int argc, char* argv[])
 	m_draw |= RXD_FIX;
 	m_draw |= RXD_TEXTURE;
 
+	// ファイルパス検索
+	PathFinder p;
+	p.addSearchPath(".");
+	p.addSearchPath("bin");
+	p.addSearchPath("../bin");
+	p.addSearchPath("../../bin");
+
 	// シェーダの初期化
-	m_shader = CreateGLSLFromFile("shaders/shading.vp", "shaders/shading.fp", "shading");
+	m_shader = CreateGLSLFromFile(p.find("shaders/shading.vp"), p.find("shaders/shading.fp"), "shading");
 
 	// テクスチャ
-	std::string filename = "sample.bmp";
+	std::string filename = p.find("sample.bmp");
+	//std::string filename = "sample.bmp";
 	glActiveTexture(GL_TEXTURE0);
 	if(!loadTexture(filename, m_tex, false, false)){
 		cout << "Error : could not find the image file - " << filename << endl;

@@ -132,6 +132,12 @@ protected:
 };
 
 
+//! 四面体の体積計算
+static inline float calVolume(const glm::vec3 &p0, const glm::vec3 &p1, const glm::vec3 &p2, const glm::vec3 &p3)
+{
+	return abs((1.0/6.0)*glm::dot(glm::cross(p1-p0, p2-p0), p3-p0));
+}
+
 
 
 
