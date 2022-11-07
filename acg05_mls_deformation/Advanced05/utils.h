@@ -81,6 +81,10 @@ inline T RX_LERP(const T &a, const T &b, const T &t){ return a + t*(b-a); }
 //! 乱数
 inline double RX_RAND(const double &_min, const double &_max){ return (_max-_min)*(double(rand())/(1.0+RAND_MAX))+_min; }
 
+//! スワップ
+template<class T>
+inline void RX_SWAP(T &a, T &b){ T c; c = a; a = b; b = c; }
+
 
 //-----------------------------------------------------------------------------
 // VAO関連
@@ -517,21 +521,6 @@ inline string GetExtension(const string &path)
 	return ext;
 }
 
-/*!
- * ファイルストリームを開く
- * @param[out] file ファイルストリーム
- * @param[in] path  ファイルパス
- * @param[in] rw    入出力フラグ (1:読込, 2:書込, 4:追記)
- * @return ファイルオープン成功:1, 失敗:0
- */
-static inline int OpenFileStream(fstream &file, const string &path, int rw = 1)
-{
-	file.open(path.c_str(), (rw & 0x01 ? ios::in : 0)|(rw & 0x02 ? ios::out : 0)|(rw & 0x04 ? ios::app : 0));
-	if(!file || !file.is_open() || file.bad() || file.fail()){
-		return 0;
-	}
-	return 1;
-}
 
 /*!
  * ディレクトリ作成(多階層対応) - Windows only

@@ -77,9 +77,6 @@
     <ClInclude Include="imgui\imgui_impl_opengl2.h">
       <Filter>ImGUI</Filter>
     </ClInclude>
-    <ClInclude Include="msh.h">
-      <Filter>Utilities</Filter>
-    </ClInclude>
     <ClInclude Include="wave.h">
       <Filter>Fluid</Filter>
     </ClInclude>

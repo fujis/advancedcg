@@ -168,7 +168,6 @@
     <ClInclude Include="characteranimation.h" />
     <ClInclude Include="dualquaternion.h" />
     <ClInclude Include="imgui\imgui_impl_opengl2.h" />
-    <ClInclude Include="msh.h" />
     <ClInclude Include="scene.h" />
     <ClInclude Include="imgui\imconfig.h" />
     <ClInclude Include="imgui\imgui.h" />

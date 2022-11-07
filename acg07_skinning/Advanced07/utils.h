@@ -758,22 +758,6 @@ inline string GetExtension(const string &path)
 }
 
 /*!
- * ファイルストリームを開く
- * @param[out] file ファイルストリーム
- * @param[in] path  ファイルパス
- * @param[in] rw    入出力フラグ (1:読込, 2:書込, 4:追記)
- * @return ファイルオープン成功:1, 失敗:0
- */
-static inline int OpenFileStream(fstream &file, const string &path, int rw = 1)
-{
-	file.open(path.c_str(), (rw & 0x01 ? ios::in : 0)|(rw & 0x02 ? ios::out : 0)|(rw & 0x04 ? ios::app : 0));
-	if(!file || !file.is_open() || file.bad() || file.fail()){
-		return 0;
-	}
-	return 1;
-}
-
-/*!
  * ディレクトリ作成(多階層対応) - Windows only
  * @param[in] dir 作成ディレクトリパス
  * @return 成功で1,失敗で0 (ディレクトリがすでにある場合も1を返す)

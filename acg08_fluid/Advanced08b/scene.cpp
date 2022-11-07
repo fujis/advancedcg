@@ -324,6 +324,8 @@ void SceneSWE::ImGui(GLFWwindow* window)
 	if(ImGui::Button("mountain")){ initWaveMountain(); }
 	if(m_wave){
 		ImGui::Separator();
+		if(ImGui::Button("sphere")){ m_wave->AddSphere(glm::vec3(0.0f, 0.5f, 0.0f), 0.25f); }
+		ImGui::Separator();
 		ImGui::Checkbox("sine-wave", &(m_wave->m_surf));
 		ImGui::InputFloat("viscosity", &(m_wave->m_nu), 0.001f, 0.01f, "%.4f");
 	}
