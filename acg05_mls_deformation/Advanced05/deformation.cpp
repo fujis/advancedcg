@@ -1,6 +1,6 @@
-/*! 
+/*!
   @file rx_deform.cpp
-	
+
 	@brief 2Dメッシュ変形
 
   @author Makoto Fujisawa
@@ -29,7 +29,7 @@
 * @param[in] alpha 重みwを計算するための係数(w=1/(|p-v|^(2*alpha)))
 * @return 変形後の座標(f(v))
 */
-glm::vec2 rxMeshDeform2D::affineDeformation(const glm::vec2 &v, const glm::vec2 &pc, const glm::vec2 &qc, const double alpha)
+glm::vec2 rxMeshDeform2D::affineDeformation(const glm::vec2& v, const glm::vec2& pc, const glm::vec2& qc, const double alpha)
 {
 	// TODO:この部分で 入力頂点座標v と 制御点座標p,q から入力頂点の変形後の座標を計算するコードを書く
 	// - Ajを計算してから変形後の座標を計算するのでも，スライドp43の式を直接計算するのでもどちらでもOK
@@ -59,10 +59,10 @@ glm::vec2 rxMeshDeform2D::affineDeformation(const glm::vec2 &v, const glm::vec2 
 	//
 	//}
 
+	// ----課題ここから----
+
 	// 変形後の頂点vの座標
 	glm::vec2 fa = v;	// ここも書き換えること
-
-	// ----課題ここから----
 
 	// Σp^T w p の計算
 	glm::mat2 pwp(0.0f);
@@ -109,7 +109,7 @@ glm::vec2 rxMeshDeform2D::affineDeformation(const glm::vec2 &v, const glm::vec2 
 		fa += Aj*w*q;
 	}
 	fa += qc;
-
+	
 
 	//// Ajを使わないでスライドp43の式を直接計算する場合
 	//glm::mat2 pwp(0.0f);
@@ -149,7 +149,10 @@ glm::vec2 rxMeshDeform2D::affineDeformation(const glm::vec2 &v, const glm::vec2 
 	//fa[0] = vppwp[0]*pwq[0][0]+vppwp[1]*pwq[1][0]+qc[0];
 	//fa[1] = vppwp[0]*pwq[0][1]+vppwp[1]*pwq[1][1]+qc[1];
 
+
+
 	// ----課題ここまで----
+
 
 
 	return fa;
@@ -164,7 +167,7 @@ glm::vec2 rxMeshDeform2D::affineDeformation(const glm::vec2 &v, const glm::vec2 
 * @param[in] alpha 重みwを計算するための係数(w=1/(|p-v|^(2*alpha)))
 * @return 変形後の座標(f(v))
 */
-glm::vec2 rxMeshDeform2D::similarityDeformation(const glm::vec2 &v, const glm::vec2 &pc, const glm::vec2 &qc, const double alpha)
+glm::vec2 rxMeshDeform2D::similarityDeformation(const glm::vec2& v, const glm::vec2& pc, const glm::vec2& qc, const double alpha)
 {
 	// TODO:この部分で 入力頂点座標v と 制御点座標p,q から入力頂点の変形後の座標を計算するコードを書く
 	// - μsを先に計算してから変形後の頂点位置を計算
@@ -202,22 +205,32 @@ glm::vec2 rxMeshDeform2D::similarityDeformation(const glm::vec2 &v, const glm::v
 
 		// 固定点と計算点の間の距離に基づく重み
 		double dist = glm::length2(m_vP[j]-v);
-		double w = (dist > 1.0e-6) ? 1.0/pow(dist, alpha) : 0.0;
+		float w = (dist > 1.0e-6) ? 1.0/pow(dist, alpha) : 0.0;
 
+		// 行列Aiのためのpとv-pによる行列の計算(glm::matはOpenGLに合わせて列優先順になっているので注意!)
+		glm::mat2 Mp(0.0f), Mvp(0.0f);
+		Mp[0][0] = p[0]; Mp[1][0] = p[1];	//  p
+		Mp[0][1] = p[1]; Mp[1][1] = -p[0];	// -p^⊥
+		Mvp[0][0] = vp[0]; Mvp[1][0] = vp[1];	//  (v-p*)
+		Mvp[0][1] = vp[1]; Mvp[1][1] = -vp[0];	// -(v-p*)^⊥
 		// 行列Aiの計算
-		glm::mat2 A(0.0);
-		A[0][0] += w*(p[0]*vp[0]+p[1]*vp[1]);
-		A[0][1] += w*(p[0]*vp[1]-p[1]*vp[0]);
-		A[1][0] += w*(p[1]*vp[0]-p[0]*vp[1]);
-		A[1][1] += w*(p[1]*vp[1]+p[0]*vp[0]);
+		glm::mat2 A = w*Mp*Mvp;
+		fsv[0] += (q[0]*A[0][0]+q[1]*A[0][1])/mus;
+		fsv[1] += (q[0]*A[1][0]+q[1]*A[1][1])/mus;
 
-		fsv[0] += (q[0]*A[0][0]+q[1]*A[1][0])/mus;
-		fsv[1] += (q[0]*A[0][1]+q[1]*A[1][1])/mus;
+		//// 行列Aiの計算(Aiの要素を直接計算する場合)
+		//glm::mat2 A(0.0f);
+		//A[0][0] = w*(p[0]*vp[0]+p[1]*vp[1]);
+		//A[0][1] = w*(p[0]*vp[1]-p[1]*vp[0]);
+		//A[1][0] = w*(p[1]*vp[0]-p[0]*vp[1]);
+		//A[1][1] = w*(p[1]*vp[1]+p[0]*vp[0]);
+
+		//fsv[0] += (q[0]*A[0][0]+q[1]*A[1][0])/mus;
+		//fsv[1] += (q[0]*A[0][1]+q[1]*A[1][1])/mus;
 	}
 	fsv += qc;
 
 	// ----課題ここまで----
-
 
 	return fsv;
 }
@@ -231,7 +244,7 @@ glm::vec2 rxMeshDeform2D::similarityDeformation(const glm::vec2 &v, const glm::v
 * @param[in] alpha 重みwを計算するための係数(w=1/(|p-v|^(2*alpha)))
 * @return 変形後の座標(f(v))
 */
-glm::vec2 rxMeshDeform2D::rigidDeformation(const glm::vec2 &v, const glm::vec2 &pc, const glm::vec2 &qc, const double alpha)
+glm::vec2 rxMeshDeform2D::rigidDeformation(const glm::vec2& v, const glm::vec2& pc, const glm::vec2& qc, const double alpha)
 {
 	// TODO:この部分で 入力頂点座標v と 制御点座標p,q から入力頂点の変形後の座標を計算するコードを書く
 	// - μfを先に計算してから変形後の頂点位置を計算
@@ -308,15 +321,15 @@ int rxMeshDeform2D::Update(double dt)
 		if(std::find(m_vCP.begin(), m_vCP.end(), i) != m_vCP.end()) continue;
 
 		// 頂点の初期座標
-		const glm::vec2 &v = m_vP[i];
+		const glm::vec2& v = m_vP[i];
 
 		// 固定点の移動前，移動後の重み付き中心p*,q*の計算
 		glm::vec2 pc(0.0), qc(0.0);
 		double wsum = 0.0;
 		for(int k = 0; k < m_iNcp; ++k){
 			int j = m_vCP[k];
-			const glm::vec2 &p = m_vP[j];
-			const glm::vec2 &q = m_vX[j];
+			const glm::vec2& p = m_vP[j];
+			const glm::vec2& q = m_vX[j];
 
 			// 固定点と計算点の間の距離に基づく重み
 			double dist = glm::length2(p-v);
@@ -381,7 +394,7 @@ void rxMeshDeform2D::Init(int random_mesh)
 	glm::vec2 c2(1.0, 1.0);
 	if(random_mesh) generateRandomMesh(c1, c2, 0.07, 800);
 	else generateMesh(c1, c2, 32, 32);
-	
+
 	// 頂点配列オブジェクトの作成
 	if(m_vao_mesh != 0) glDeleteVertexArrays(1, &m_vao_mesh);
 	m_vao_mesh = CreateVAO((GLfloat*)&m_vX[0], m_iNv, 2, &m_vTri[0], m_iNt, 0, 0, 0, 0, (GLfloat*)&m_vTC[0], m_iNv);
@@ -575,7 +588,7 @@ void rxMeshDeform2D::generateMesh(glm::vec2 c1, glm::vec2 c2, int nx, int ny)
  * @param[in] p 点の座標
  * @return 距離
  */
-inline double segment_point_dist(const glm::vec2 &v0, const glm::vec2 &v1, const glm::vec2 &p, glm::vec2 &ip)
+inline double segment_point_dist(const glm::vec2& v0, const glm::vec2& v1, const glm::vec2& p, glm::vec2& ip)
 {
 	glm::vec2 v = glm::normalize(v1-v0);
 	glm::vec2 vp = p-v0;
