@@ -128,7 +128,7 @@ int main(int argc, char *argv[])
 #endif
 
 	// Create window with graphics context
-	GLFWwindow* window = glfwCreateWindow(winw, winh, "Advanced CG 06: Assignments", NULL, NULL);
+	GLFWwindow* window = glfwCreateWindow(winw, winh, "Advanced CG 07: Assignments", NULL, NULL);
 	if(window == NULL) return 1;
 
 	glfwMakeContextCurrent(window);
