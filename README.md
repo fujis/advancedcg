@@ -13,6 +13,11 @@ This is a repository for the lecture course "Advanced Computer Graphics" in Univ
 ### Windows
 * もし自分の PC に Visual Studio (2019 または 2022) がインストールされていない場合は，講義資料フォルダ(SharePoint)の「Visual Studio Community インストール方法.pdf」 を参考にしてインストールしてください．
 * 上記ソースコード一式に含まれるVisualStudioソリューション/プロジェクトファイルを用いた場合で，「error MSB8036: Windows SDK バージョン 10.0.xxxxxx.0 が見つかりませんでした。」というエラーが出てビルドできない場合は，「プロジェクト」メニューから「プロジェクトの再ターゲット」を実行してください．「Windows SDK バージョン:」 のところにその環境で対応するバージョンが出るので，問題なければそのまま「OK」をクリックすればプロジェクトがその環境に合わせて更新されます．
+* 全学計算機システムのリモートデスクトップでプログラムを実行した場合，第5回の課題用プログラムでメッシュおよびテクスチャがうまく表示されないようです(実習室のPCでは問題なし)．これは環境が対応しているGLSLのバージョン違いが原因です．リモートデスクトップで第5回の課題を行う場合は， bin/shaders/shading.fp と bin/shaders/shading.vp の12or13行目の
+`#version 410 core`
+というところを
+`#version 330`
+と書き換えてください．
 
 ### Mac, Linux (Ubuntu)
 * 上記ソースコード一式はMac用MakefileとUbuntu用Makefileは含んでいるのでそれを使ってください(Ubuntu用はMakefile.ubuntuとしてあるので適宜ファイル名変更してください)．ただし，画像などのファイルはincludeフォルダなどと同じレベルのbinフォルダを作成して，その中に入れるようにしてください．
