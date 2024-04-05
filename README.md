@@ -1,6 +1,7 @@
 # advancedcg_report
 筑波大学情報学群情報メディア創成学類の授業「アドバンストCG」の第5回～第8回のレポートのためのベースコード公開用リポジトリです．
-This is a repository for the lecture course "Advanced Computer Graphics" in University of Tsukuba. 
+
+This is a git repository for the lecture "Advanced Computer Graphics" at the University of Tsukuba, School of Informatics, College of Media Arts, Science and Technology. 
 
 ## 各フォルダについて
 * Advanced05～Advanced08 : 第5回～第8回の授業課題のベースプログラムが置いてあります．
