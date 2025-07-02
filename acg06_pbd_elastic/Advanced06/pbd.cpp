@@ -166,6 +166,7 @@ void ElasticPBD::projectBendingConstraint(float ks)
 		dp3 = -w3*lambda*q3;
 		dp4 = -w4*lambda*q4;
 
+
 		// ----課題ここまで----
 
 		// 頂点位置を移動

@@ -83,7 +83,7 @@ glm::vec2 rxMeshDeform2D::affineDeformation(const glm::vec2& v, const glm::vec2&
 
 	// 逆行列の計算(エラー処理付き)
 	float d = glm::determinant(pwp);
-	if(d < 1e-6) return v-pc+qc;
+	if(d < 1e-6) return v;// -pc+qc;
 	glm::mat2 pwp_inv = glm::inverse(pwp);
 
 	// 横ベクトル×行列になるのでglmのオペレータ*は使わない(glmは縦ベクトルを前提としている)
@@ -147,11 +147,13 @@ glm::vec2 rxMeshDeform2D::affineDeformation(const glm::vec2& v, const glm::vec2&
 	//vppwp[1] = vp[0]*pwp_inv[0][1]+vp[1]*pwp_inv[1][1];
 
 	//fa[0] = vppwp[0]*pwq[0][0]+vppwp[1]*pwq[1][0]+qc[0];
-	//fa[1] = vppwp[0]*pwq[0][1]+vppwp[1]*pwq[1][1]+qc[1];
+	////fa[1] = vppwp[0]*pwq[0][1]+vppwp[1]*pwq[1][1]+qc[1];
 
 
 
 	// ----課題ここまで----
+
+
 
 
 
@@ -232,6 +234,7 @@ glm::vec2 rxMeshDeform2D::similarityDeformation(const glm::vec2& v, const glm::v
 
 	// ----課題ここまで----
 
+
 	return fsv;
 }
 
@@ -301,6 +304,9 @@ glm::vec2 rxMeshDeform2D::rigidDeformation(const glm::vec2& v, const glm::vec2& 
 	frv += qc;
 
 	// ----課題ここまで----
+
+
+
 
 	return frv;
 }

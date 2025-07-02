@@ -31,7 +31,7 @@
 * @param[inout] vrts 頂点座標が格納されたベクトル
 * @param[in] weights vrtsと同じ大きさの配列で各頂点の重みを格納
 */
-int CharacterAnimation::skinningLBS(vector<glm::vec3> &vrts, const vector< map<int, double> > &weights)
+int CharacterAnimation::skinningLBS(vector<glm::vec3>& vrts, const vector< map<int, double> >& weights)
 {
 	// 頂点毎に変換行列を重みをかけながら適用
 	int nv = (int)(vrts.size());
@@ -93,7 +93,7 @@ int CharacterAnimation::skinningLBS(vector<glm::vec3> &vrts, const vector< map<i
 * @param[inout] vrts 頂点座標が格納されたベクトル
 * @param[in] weights vrtsと同じ大きさの配列で各頂点の重みを格納
 */
-int CharacterAnimation::skinningDQS(vector<glm::vec3> &vrts, const vector< map<int, double> > &weights)
+int CharacterAnimation::skinningDQS(vector<glm::vec3>& vrts, const vector< map<int, double> >& weights)
 {
 	// 頂点毎に変換DQを重みをかけながら適用
 	int nv = (int)(vrts.size());
@@ -122,6 +122,10 @@ int CharacterAnimation::skinningDQS(vector<glm::vec3> &vrts, const vector< map<i
 		// ・四元数や行列については授業スライドの最後の方の説明を参照すること
 		// ・Dual Quaternionを扱うための，DualQuaternion型を定義してある(dualquaternion.h)ので自由に使ってください．
 		//   基本的な演算は定義してありますが，頂点vのDual Quaternionによる変換は定義されていないので自分でここに実装してください．
+		// ・注意としてDual Quaternionを重みを掛けながら足し合わせていくという演算をする場合，Dual Quaternionの初期化が必要になります．
+		//   こちらで用意したDualQuaternionクラスはデフォルトではreal partを単位四元数(1,0,0,0)，dual partを(0,0,0,0)で初期化しますが，
+		//   Dual Quaterionを足し合わせて行く場合は回転部分を表すreal partも(0,0,0,0)で初期化するか，
+		//   1つめの重み&位置姿勢を初期値として代入して，2つめ以降の重み&位置姿勢を足し合わせていくといった方法を取る必要があります．
 
 		// ----課題ここから----
 
@@ -153,29 +157,6 @@ int CharacterAnimation::skinningDQS(vector<glm::vec3> &vrts, const vector< map<i
 
 		//---------------------
 
-		//map<int, double>::const_iterator itr = weights[i].begin();
-		//DualQuaternion sigma(glm::quat(0, 0, 0, 0), glm::quat(0, 0, 0, 0));
-		//for(; itr != weights[i].end(); ++itr){
-		//	int j = itr->first;	// ジョイント番号
-		//	float wij = static_cast<float>(itr->second);	// 重み
-		//	// ここにジョイントjに関する処理を書く
-		//	glm::mat4 WB = m_joints[j].W * glm::inverse(m_joints[j].B);
-		//	glm::mat3 WBrot = glm::mat3(WB);
-		//	glm::quat qj = glm::toQuat(WBrot);
-		//	glm::vec3 tj = glm::vec3(WB[3]);
-		//	DualQuaternion qjDual;
-		//	qjDual.m_real = qj;
-		//	qjDual.m_dual = 0.5 * glm::quat(0, tj) * qj;
-		//	sigma += wij * qjDual;
-		//}
-		//DualQuaternion sigmaCon;
-		//sigmaCon.m_real = glm::conjugate(sigma.m_real);
-		//sigmaCon.m_dual = glm::conjugate(sigma.m_dual);
-		//DualQuaternion qi = sigma / (sigma * sigmaCon);
-		////sigma.normalize();
-		////DualQuaternion qi = sigma;
-		//glm::quat q = qi.m_real * glm::quat(0, v) * glm::conjugate(qi.m_real) + 2.0f * qi.m_dual * glm::conjugate(qi.m_real);
-		//v_new = glm::vec3(q.x, q.y, q.z);
 
 		// ----課題ここまで----
 
@@ -191,7 +172,7 @@ int CharacterAnimation::skinningDQS(vector<glm::vec3> &vrts, const vector< map<i
 * @param[inout] vrts 頂点座標が格納されたベクトル
 * @param[in] weights vrtsと同じ大きさの配列で各頂点の重みを格納
 */
-int CharacterAnimation::Skinning(int step, vector<glm::vec3> &vrts, const vector< map<int, double> > &weights)
+int CharacterAnimation::Skinning(int step, vector<glm::vec3>& vrts, const vector< map<int, double> >& weights)
 {
 	if(m_joints.empty()) return 0;
 
@@ -285,9 +266,9 @@ bool CharacterAnimation::Read(string file_name)
 		//	buf = buf.substr(0, comment_start);
 
 		// 行頭のスペース，タブを削除
-		while ((pos = buf.find_first_of(" 　\t")) == 0) {
+		while((pos = buf.find_first_of(" 　\t")) == 0) {
 			buf.erase(buf.begin());
-			if (buf.empty()) break;
+			if(buf.empty()) break;
 		}
 
 		// 改行記号(EOL)削除(macだと改行記号が違うのでこれをしていないと最後の文字の処理時に問題が発生することがある)
@@ -342,7 +323,7 @@ bool CharacterAnimation::Read(string file_name)
 			pos = GetNextString(buf, sub, pos, " "); p[1] = atof(sub.c_str()); // 2番目の数値
 			pos = GetNextString(buf, sub, pos, " "); p[2] = atof(sub.c_str()); // 3番目の数値
 
-			if (m_joints[cur_idx].is_site) {
+			if(m_joints[cur_idx].is_site) {
 				m_joints[cur_idx].site_offset = p;
 			}
 			else {
@@ -357,17 +338,17 @@ bool CharacterAnimation::Read(string file_name)
 			pos = GetNextString(buf, sub, 0, " "); // 最初のCHANNELS部分
 			pos = GetNextString(buf, sub, pos, " "); nchannels = atoi(sub.c_str()); // 間接自由度の数
 			m_joints[cur_idx].channels.resize(nchannels);
-			for (int i = 0; i < nchannels; ++i) {
+			for(int i = 0; i < nchannels; ++i) {
 				Channel channel;
 				channel.joint = cur_idx;
 				channel.index = int(m_channels.size());
 				pos = GetNextString(buf, sub, pos, " ");
-				if (sub == "Xposition") channel.type = Channel::X_POS;
-				else if (sub == "Yposition") channel.type = Channel::Y_POS;
-				else if (sub == "Zposition") channel.type = Channel::Z_POS;
-				else if (sub == "Xrotation") channel.type = Channel::X_ROT;
-				else if (sub == "Yrotation") channel.type = Channel::Y_ROT;
-				else if (sub == "Zrotation") channel.type = Channel::Z_ROT;
+				if(sub == "Xposition") channel.type = Channel::X_POS;
+				else if(sub == "Yposition") channel.type = Channel::Y_POS;
+				else if(sub == "Zposition") channel.type = Channel::Z_POS;
+				else if(sub == "Xrotation") channel.type = Channel::X_ROT;
+				else if(sub == "Yrotation") channel.type = Channel::Y_ROT;
+				else if(sub == "Zrotation") channel.type = Channel::Z_ROT;
 
 				m_channels.push_back(channel);
 				m_joints[cur_idx].channels[i] = channel.index;
@@ -417,7 +398,7 @@ bool CharacterAnimation::Read(string file_name)
  */
 void CharacterAnimation::CheckData(void)
 {
-	for(const Joint &joint : m_joints){
+	for(const Joint& joint : m_joints){
 		cout << "[" << joint.name << "]" << endl;
 		cout << "  index : " << joint.index << endl;
 		cout << "  offset : " << glm::to_string(joint.offset) << endl;
@@ -427,7 +408,7 @@ void CharacterAnimation::CheckData(void)
 
 		cout << "  channels : ";
 		for(int c : joint.channels){
-			const Channel &channel = m_channels[c];
+			const Channel& channel = m_channels[c];
 			if(channel.type == Channel::X_POS) cout << "Xposition ";
 			else if(channel.type == Channel::Y_POS) cout << "Yposition ";
 			else if(channel.type == Channel::Z_POS) cout << "Zposition ";
@@ -471,7 +452,7 @@ void CharacterAnimation::Draw(int step, float scale)
 	if(m_joints.empty()) return;
 
 	size_t nchannels = m_channels.size();
-	float *motion = &m_motions[0];
+	float* motion = &m_motions[0];
 
 	// ルート関節から順番に全ての間接のグローバル変換行列(回転+平行移動)を計算
 	calTransMatrices(step, scale);
@@ -492,7 +473,7 @@ void CharacterAnimation::Draw(int step, float scale)
  * @param[in] motion 間接自由度毎の動き(現フレームデータの先頭ポインタ)
  * @param[in] scale 描画スケール
  */
-void CharacterAnimation::drawJoint(const int joint_idx, float *motion, float scale)
+void CharacterAnimation::drawJoint(const int joint_idx, float* motion, float scale)
 {
 	glPushMatrix();
 
@@ -644,7 +625,7 @@ void CharacterAnimation::drawCapsule(glm::vec3 pos0, glm::vec3 pos1)
  * @param[in] polys ポリゴンデータ
  * @param[in] draw 描画フラグ(下位ビットから頂点,エッジ,面,法線 - 1,2,4,8)
  */
-void CharacterAnimation::drawPolygon(rxPolygons &poly)
+void CharacterAnimation::drawPolygon(rxPolygons& poly)
 {
 	// 頂点数とポリゴン数
 	int vn = (int)poly.vertices.size();
@@ -652,7 +633,7 @@ void CharacterAnimation::drawPolygon(rxPolygons &poly)
 
 	// すべてのポリゴンを描画
 	for(int i = 0; i < pn; ++i){
-		const rxFace *face = &(poly.faces[i]);
+		const rxFace* face = &(poly.faces[i]);
 		int n = (int)face->vert_idx.size();
 
 		// ポリゴン描画
@@ -671,7 +652,7 @@ void CharacterAnimation::drawPolygon(rxPolygons &poly)
 * スケルトンのAABBを計算
 * @param[in] joint_idx 間接ノードインデックス
 */
-void CharacterAnimation::AABB(glm::vec3 &minp, glm::vec3 &maxp, bool rest)
+void CharacterAnimation::AABB(glm::vec3& minp, glm::vec3& maxp, bool rest)
 {
 	// 各関節の変換行列を計算
 	calTransMatrices(0, 1.0f);
@@ -725,7 +706,7 @@ void CharacterAnimation::AABB(glm::vec3 &minp, glm::vec3 &maxp, bool rest)
 * - 重み計算時に使う
 * @param[in] joint_idx 間接ノードインデックス
 */
-void CharacterAnimation::calGlobalPos(const int joint_idx, glm::vec3 pos, vector<glm::vec3> &trans)
+void CharacterAnimation::calGlobalPos(const int joint_idx, glm::vec3 pos, vector<glm::vec3>& trans)
 {
 	Joint& joint = m_joints[joint_idx];
 
@@ -750,7 +731,7 @@ void CharacterAnimation::calGlobalPos(const int joint_idx, glm::vec3 pos, vector
 * @param[out] weights vrtsと同じ大きさの配列で各頂点の重みを格納
 * @return
 */
-float CharacterAnimation::calWeight(const int joint_idx, const glm::vec3 &p, const vector<glm::vec3> &posj)
+float CharacterAnimation::calWeight(const int joint_idx, const glm::vec3& p, const vector<glm::vec3>& posj)
 {
 	int parent_idx = m_joints[joint_idx].parent;
 	if(parent_idx == -1){	// 親ジョイントなし
@@ -771,7 +752,7 @@ float CharacterAnimation::calWeight(const int joint_idx, const glm::vec3 &p, con
 * @param[out] weights vrtsと同じ大きさの配列で各頂点の重みを格納
 * @return
 */
-int CharacterAnimation::Weight(const vector<glm::vec3> &vrts, vector< map<int, double> > &weights)
+int CharacterAnimation::Weight(const vector<glm::vec3>& vrts, vector< map<int, double> >& weights)
 {
 	if(m_joints.empty()) return 0;
 
@@ -782,11 +763,11 @@ int CharacterAnimation::Weight(const vector<glm::vec3> &vrts, vector< map<int, d
 
 	// 各頂点毎に最近傍の関節を求める
 	int n = (int)(posj.size()), vrt_idx = 0;
-	for(const glm::vec3 &v: vrts){
+	for(const glm::vec3& v: vrts){
 		// 各関節との距離の計算
 		float min_dist = RX_FEQ_INF;
 		int min_joint = -1, joint_idx = 0;
-		for(const glm::vec3 &p: posj){
+		for(const glm::vec3& p: posj){
 			float dist = glm::length(v-p);
 			if(dist <= min_dist){
 				min_dist = dist; min_joint = joint_idx;
@@ -797,7 +778,7 @@ int CharacterAnimation::Weight(const vector<glm::vec3> &vrts, vector< map<int, d
 		// 各間接の中点(ボーンの中心)との距離の計算
 		float min_dist_b = RX_FEQ_INF;
 		int min_bone = -1, bone_idx = 0;
-		for(const glm::vec3 &p: posj){
+		for(const glm::vec3& p: posj){
 			int parent_idx = m_joints[bone_idx].parent;
 
 			// 親ジョイントを持つ場合，そことの中点をボーンの中心座標とする
@@ -889,7 +870,7 @@ void CharacterAnimation::calRestGlobalTrans(const int joint_idx, glm::mat4 mat, 
 * ノードを再帰的に辿っていって各ボーンの変換行列を計算
 * @param[in] joint_idx 間接ノードインデックス
 */
-void CharacterAnimation::calAnimatedGlobalTrans(const int joint_idx, const glm::mat4 parent_mat, float *motion, float scale)
+void CharacterAnimation::calAnimatedGlobalTrans(const int joint_idx, const glm::mat4 parent_mat, float* motion, float scale)
 {
 	if(m_joints.empty()) return;
 
@@ -908,7 +889,7 @@ void CharacterAnimation::calAnimatedGlobalTrans(const int joint_idx, const glm::
 	// 親間接からの回転
 	glm::mat4 rot(1.0f);	// 回転行列(単位行列で初期化)
 	for(int i = 0; i < joint.channels.size(); ++i){
-		const Channel &channel = m_channels[joint.channels[i]];
+		const Channel& channel = m_channels[joint.channels[i]];
 		float ang = motion[channel.index];// 角度は[deg](glm::rotateに渡す角度も[deg]なので変換なし)
 		glm::mat4 ri = glm::mat4(1.0f);
 		if(channel.type == Channel::X_ROT){
@@ -943,7 +924,7 @@ int CharacterAnimation::calTransMatrices(int step, float scale)
 {
 	if(m_joints.empty()) return 0;
 
-	float *motion = &m_motions[0];
+	float* motion = &m_motions[0];
 	size_t nchannels = m_channels.size();
 
 	// rest(bind) poseでのワールド変換行列の計算
