@@ -28,6 +28,7 @@
 *.VC.db
 *.ini
 *.opendb
+*.pptx
 
 score/
 bmc/
@@ -36,6 +37,8 @@ Debug/
 Release/
 Release(*)/
 ipch/
+.vc/
+.vs/
 
 vol/
 img/
@@ -44,6 +47,7 @@ images/
 images_with_tag*/
 *_ign
 *_ign/
+*_ign.*
 
 *.lzh
 *.zip
@@ -64,5 +68,11 @@ mesh_fluid3d_*.pov
 ~$*
 
 
-2013_sougou_kanamori
 
+*.db-wal
+/src/linearsystem/.vs/linearsystem/v15/*.db-shm
+*.db-shm
+/src/error/.vs/ProjectSettings.json
+/src/error/.vs/VSWorkspaceState.json
+/src/error/.vs/slnx.sqlite
+/src/error/Makefile
