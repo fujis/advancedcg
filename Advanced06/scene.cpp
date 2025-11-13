@@ -316,7 +316,9 @@ void ScenePBD::ImGui(GLFWwindow* window)
 	ImGui::Checkbox("use edges inside", &(m_elasticbody->m_bUseInEdge));
 	ImGui::Separator();
 	ImGui::InputInt("iterations", &(m_elasticbody->m_iNmax), 1, 20);
-	ImGui::InputFloat("stiffness", &(m_elasticbody->m_fK), 0.01f, 1.0f, "%.2f");
+	if(ImGui::InputFloat("stiffness", &(m_elasticbody->m_fK), 0.01f, 1.0f, "%.2f")){
+		m_elasticbody->m_fK = RX_CLAMP<float>(m_elasticbody->m_fK, 0.0, 1.0);
+	}
 	ImGui::InputFloat("wind", &(m_elasticbody->m_fWind), 0.01f, 0.5f, "%.2f");
 	ImGui::Separator();
 	if(ImGui::Button("quit")){ glfwSetWindowShouldClose(window, GLFW_FALSE); }
