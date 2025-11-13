@@ -7,8 +7,8 @@
   @date 2021
 */
 
-#ifndef _RX_PBD_STRAND_H_
-#define _RX_PBD_STRAND_H_
+#ifndef _RX_PBD_ELASTIC_H_
+#define _RX_PBD_ELASTIC_H_
 
 
 //-----------------------------------------------------------------------------
@@ -141,4 +141,4 @@ static inline float calVolume(const glm::vec3 &p0, const glm::vec3 &p1, const gl
 
 
 
-#endif // _RX_PBD_STRAND_H_
+#endif // _RX_PBD_ELASTIC_H_
