@@ -1,6 +1,6 @@
 # アドバンストCG / Advanced CG
 筑波大学情報学群情報メディア創成学類・情報科学類の授業「アドバンストCG」の第5回～第8回レポートのためのベースとなるコード公開用リポジトリです．
-第1回～第4回については金森先生の[リポジトリ](https://github.com/yshhrknmr/AdvancedCG)を参照sてください．
+第1回～第4回については金森先生の[リポジトリ](https://github.com/yshhrknmr/AdvancedCG)を参照してください．
 This is a git repository for the lecture "Advanced Computer Graphics" at the University of Tsukuba, School of Informatics, College of Media Arts, Science and Technology. It includes the base code written in C++ for the reports.
 
 ## フォルダ構成など
