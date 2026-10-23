@@ -1,4 +1,4 @@
-/*! 
+﻿/*! 
   @file rx_deform.cpp
 	
 	@brief 2Dメッシュ変形
@@ -135,7 +135,14 @@ glm::vec2 rxMeshDeform2D::rigidDeformation(const glm::vec2 &v, const glm::vec2 &
 */
 int rxMeshDeform2D::Update(double dt)
 {
-	if(m_iNcp <= 1) return 0;
+	if(m_iNcp == 0) return 0;
+
+	// 制御点が1つの場合はその移動量で全体を平行移動
+	if(m_iNcp == 1){
+		glm::vec2 t = m_vX[m_vCP[0]]-m_vP[m_vCP[0]];
+		for(int i = 0; i < m_iNv; ++i) m_vX[i] = m_vP[i]+t;
+		return 1;
+	}
 
 	// 各頂点を変形
 	for(int i = 0; i < m_iNv; ++i){
@@ -216,14 +223,64 @@ void rxMeshDeform2D::Init(int random_mesh)
 	glm::vec2 c2(1.0, 1.0);
 	if(random_mesh) generateRandomMesh(c1, c2, 0.07, 800);
 	else generateMesh(c1, c2, 32, 32);
-	
+
+	onMeshChanged();
+}
+
+/*!
+ * 画像中のオブジェクト形状に沿ったメッシュで初期化
+ *  - 背景(白)以外の領域をメッシュ化する(mesh_image.h参照)
+ *  - テクスチャ座標は画像全体が[0,1]x[0,1]になるように設定される
+ * @param[in] filename 画像ファイル名(BMP,PNG,JPEGなどstb_imageで読めるもの)
+ * @param[in] prm メッシュ生成パラメータ
+ * @return 生成に成功したらtrue(失敗した場合はメッシュは変更しない)
+ */
+bool rxMeshDeform2D::InitImage(const string &filename, const rxImageMeshParams &prm)
+{
+	// 画像読み込み(loadTextureと同じく1行目が画像の下端)
+	int w, h, c;
+	unsigned char* img = ReadImageBottomUp(filename, w, h, c);
+	if(!img) return false;
+
+	vector<glm::vec2> pts, tc;
+	vector<unsigned int> tris;
+	bool ok = GenerateImageMesh(img, w, h, c, w*c, glm::vec2(-1.0), glm::vec2(1.0), prm, pts, tc, tris);
+	free(img);
+	if(!ok) return false;
+
+	m_vX = m_vP = pts;
+	m_vTC = tc;
+	m_vTri = tris;
+	m_iNv = (int)pts.size();
+	m_iNt = (int)tris.size()/3;
+
+	onMeshChanged();
+	return true;
+}
+
+/*!
+ * メッシュ設定後の共通処理
+ */
+void rxMeshDeform2D::onMeshChanged(void)
+{
 	// 頂点配列オブジェクトの作成
-	if(m_vao_mesh != 0) glDeleteVertexArrays(1, &m_vao_mesh);
-	m_vao_mesh = CreateVAO((GLfloat*)&m_vX[0], m_iNv, 2, &m_vTri[0], m_iNt, 0, 0, 0, 0, (GLfloat*)&m_vTC[0], m_iNv);
+	InitVAO();
 
 	// 固定点の設定
 	m_vCP.clear(); m_iNcp = 0;
 	updateCPVAO();
+
+	// メッシュの品質(三角形の内角)
+	m_quality = CalMeshQuality(m_vP, m_vTri);
+}
+
+/*!
+ * 頂点座標を初期形状に戻す(固定点は解除)
+ */
+void rxMeshDeform2D::ResetShape(void)
+{
+	m_vX = m_vP;
+	ClearCP();
 }
 
 
@@ -310,11 +367,18 @@ void rxMeshDeform2D::SetCP(int idx, glm::vec2 pos, bool move)
 //! 固定点解除
 void rxMeshDeform2D::UnsetCP(int idx)
 {
-	if(std::find(m_vCP.begin(), m_vCP.end(), idx) != m_vCP.end()){
-		std::remove(m_vCP.begin(), m_vCP.end(), idx);
+	vector<int>::iterator itr = std::find(m_vCP.begin(), m_vCP.end(), idx);
+	if(itr != m_vCP.end()){
+		m_vCP.erase(itr);
 		m_iNcp--;
 		updateCPVAO();
 	}
+}
+//! 全固定点解除
+void rxMeshDeform2D::ClearCP(void)
+{
+	m_vCP.clear(); m_iNcp = 0;
+	updateCPVAO();
 }
 
 /*!

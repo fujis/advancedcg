@@ -1,4 +1,4 @@
-/*! 
+﻿/*! 
   @file pbd.cpp
 	
   @brief PBDによる弾性体シミュレーション
@@ -13,6 +13,7 @@
 //-----------------------------------------------------------------------------
 #include "pbd.h"
 #include "msh.h"
+#include "rx_obj.h"
 
 
 //-----------------------------------------------------------------------------
@@ -286,7 +287,7 @@ void ElasticPBD::Draw(int drw)
 
 	// エッジ描画
 	if(drw & 0x0002){
-		glEnable(GL_LIGHTING);
+		glDisable(GL_LIGHTING);
 		glColor3d(0.5, 0.9, 0.9);
 		glLineWidth(1.0);
 		glBegin(GL_LINES);
@@ -304,7 +305,23 @@ void ElasticPBD::Draw(int drw)
 	if(drw & 0x0004){
 		glEnable(GL_LIGHTING);
 		glDisable(GL_CULL_FACE);
+		glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_TRUE);	// 裏面も法線を反転して陰影付け
 		glColor3d(0.1, 0.5, 1.0);
+
+		// 頂点法線(隣接ポリゴンの法線の面積重み付き平均)
+		vector<glm::vec3> nrms(m_iNumVertices, glm::vec3(0.0f));
+		for(int i = 0; i < m_iNumTris; ++i){
+			const rxFace &face = m_poly.faces[i];
+			if(face.size() < 3) continue;
+			const glm::vec3 &p0 = m_vCurPos[face[0]];
+			glm::vec3 fn = glm::cross(m_vCurPos[face[1]]-p0, m_vCurPos[face[2]]-p0);
+			for(int j = 0; j < face.size(); ++j) nrms[face[j]] += fn;
+		}
+		for(glm::vec3 &n : nrms){
+			float l = glm::length(n);
+			if(l > 1.0e-10f) n /= l;
+		}
+
 		for(int i = 0; i < m_iNumTris; ++i){
 			const rxFace &face = m_poly.faces[i];
 			int n = (int)face.vert_idx.size();
@@ -313,10 +330,12 @@ void ElasticPBD::Draw(int drw)
 			glBegin(GL_POLYGON);
 			for(int j = 0; j < n; ++j){
 				int idx = face.vert_idx[j];
+				glNormal3fv(glm::value_ptr(nrms[idx]));
 				glVertex3fv(glm::value_ptr(m_vCurPos[idx]));
 			}
 			glEnd();
 		}
+		glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_FALSE);
 	}
 
 	// 四面体描画(ワイヤフレーム)
@@ -463,7 +482,7 @@ void ElasticPBD::AddTetra(int v0, int v1, int v2, int v3)
  * @param[in] n hash値計算に使う定数(これが頂点数以上になるようにすること)
  * @return キー(hash値)
  */
-static inline long calKey(vector<int> v, int n = 10000)
+static inline long long calKey(vector<int> v, long long n)
 {
 	if(v[0] > v[1]) RX_SWAP(v[0], v[1]);
 	return v[0]+v[1]*n;
@@ -486,13 +505,13 @@ void ElasticPBD::MakeEdge(void)
 
 	// 四面体が定義されていたらそのエッジも加える
 	if(m_iNumTets){
-		map<long, vector<int> > edges;	// エッジリスト(重複チェック用)
+		map<long long, vector<int> > edges;	// エッジリスト(重複チェック用)
 		// 重複チェック用に表面エッジをリストに入れておく
 		for(int i = 0; i < m_iNumEdge; ++i){
 			const rxEdge &e = m_poly.edges[i];
 			vector<int> v(2);
 			v[0] = e.v[0]; v[1] = e.v[1];
-			edges.insert(pair<long, vector<int> >(calKey(v), v));
+			edges.insert(pair<long long, vector<int> >(calKey(v, m_iNumVertices), v));
 		}
 		// 四面体のエッジを格納
 		int edge_idx[6][2] = { {0, 1}, {0, 2}, {0, 3}, {1, 2}, {2, 3}, {3, 1} };
@@ -501,7 +520,7 @@ void ElasticPBD::MakeEdge(void)
 			for(int j = 0; j < 6; ++j){
 				vector<int> v(2);
 				v[0] = tet[edge_idx[j][0]]; v[1] = tet[edge_idx[j][1]];
-				long key = calKey(v);
+				long long key = calKey(v, m_iNumVertices);
 				if(edges.find(key) == edges.end()){
 					rxEdge e;
 					e.v[0] = v[0]; e.v[1] = v[1];
@@ -509,7 +528,7 @@ void ElasticPBD::MakeEdge(void)
 					m_vLengths.push_back(glm::length(m_poly.vertices[e.v[0]] - m_poly.vertices[e.v[1]]));
 					m_vInEdge.push_back(1);
 					m_iNumEdge++;
-					edges.insert(pair<long, vector<int> >(key, v));
+					edges.insert(pair<long long, vector<int> >(key, v));
 				}
 			}
 		}
@@ -651,6 +670,68 @@ void ElasticPBD::GenerateTetrahedralMeshFromFile(const string &filename)
 	// エッジ生成
 	MakeEdge();
 
+}
+
+/*!
+ * 表面メッシュファイル(OBJ)を読み込んで内部に四面体構造を生成
+ *  - 表面上の点と内部の格子点を3次元ドロネー分割して四面体メッシュを作る(tetmesh.h参照)
+ *  - モデルは中心が原点で最大幅がsizeになるように正規化する
+ *  - 表面の三角形ポリゴンは四面体メッシュの境界面になる(元のOBJの頂点・ポリゴンとは異なる)
+ * @param[in] filename OBJファイル名(パス)
+ * @param[in] prm 四面体メッシュ生成パラメータ(頂点間隔など)
+ * @param[in] size 正規化後のモデルの最大幅
+ * @return 生成に成功したらtrue
+ */
+bool ElasticPBD::GenerateTetrahedralMeshFromSurface(const string &filename, const rxTetMeshParams &prm, float size)
+{
+	// 表面メッシュの読み込み(多角形は三角形に分割)
+	rxOBJ obj;
+	vector<glm::vec3> vrts, nrms;
+	vector<rxFace> faces;
+	rxMTL mats;
+	if(!obj.Read(filename, vrts, nrms, faces, mats, true)) return false;
+	vector<int> tris;
+	for(const rxFace &f : faces){
+		for(int k = 1; k+1 < f.size(); ++k){
+			tris.push_back(f[0]); tris.push_back(f[k]); tris.push_back(f[k+1]);
+		}
+	}
+	if(vrts.empty() || tris.empty()) return false;
+
+	// 中心が原点で最大幅がsizeになるように正規化
+	glm::vec3 minp = vrts[0], maxp = vrts[0];
+	for(const glm::vec3 &v : vrts){ minp = glm::min(minp, v); maxp = glm::max(maxp, v); }
+	glm::vec3 dim = maxp-minp;
+	float scale = size/glm::max(dim[0], glm::max(dim[1], dim[2]));
+	for(glm::vec3 &v : vrts) v = (v-0.5f*(minp+maxp))*scale;
+
+	// 四面体メッシュの生成
+	vector<glm::vec3> points;
+	vector<int> surf, tets;
+	if(!GenerateTetMesh(vrts, tris, prm, points, surf, tets)) return false;
+
+	Clear();
+
+	// 頂点生成
+	double mass = 0.1;				// 各頂点の質量
+	for(int i = 0; i < (int)points.size(); ++i){
+		AddVertex(points[i], mass);
+	}
+
+	// メッシュ作成
+	for(int i = 0; i < (int)surf.size(); i += 3){
+		AddTriangle(surf[i], surf[i+1], surf[i+2]);
+	}
+
+	// 四面体生成
+	for(int i = 0; i < (int)tets.size(); i += 4){
+		AddTetra(tets[i], tets[i+1], tets[i+2], tets[i+3]);
+	}
+
+	// エッジ生成
+	MakeEdge();
+
+	return true;
 }
 
 

@@ -409,8 +409,20 @@ void SceneCA::initCA(const string &fn_bvh, const string &fn_obj)
 		glm::vec3 poly_ctr = 0.5f*(poly_maxp+poly_minp), poly_sl = 0.5f*(poly_maxp-poly_minp);
 		glm::vec3 size_conv = 1.05f*sl/poly_sl;	// ボーンがはみ出ないように少しだけ大きくする
 
-		// 元のメッシュモデルの縦横比を保存したままのスケーリング
-		FitVertices(0.5f*(maxp+minp), 0.5f*(maxp-minp), m_poly.vertices);
+		// メッシュがBVHの初期ポーズと同じ座標系で作られている(メッシュのAABBがスケルトンのAABBを含み，
+		// 大きさもほぼ同じ)場合はそのまま使い，そうでなければ元のメッシュモデルの縦横比を保存したままスケーリング
+		float lmax = 2.0f*glm::max(sl[0], glm::max(sl[1], sl[2]));
+		bool same_space = true;
+		for(int k = 0; k < 3; ++k){
+			if(poly_minp[k] > minp[k]+0.05f*lmax || poly_maxp[k] < maxp[k]-0.05f*lmax) same_space = false;
+			if(fabs(2.0f*(poly_sl[k]-sl[k])) > 0.3f*lmax) same_space = false;
+		}
+		if(same_space){
+			cout << " the mesh is already aligned with the skeleton" << endl;
+		}
+		else{
+			FitVertices(0.5f*(maxp+minp), 0.5f*(maxp-minp), m_poly.vertices);
+		}
 
 		// Skinning weightの初期値
 		m_poly.weights.resize(m_poly.vertices.size());

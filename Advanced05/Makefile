@@ -1,6 +1,6 @@
 # Compiler
 COMPILER = g++
-CXXFLAGS = -O3 -std=c++11
+CXXFLAGS = -O3 -std=c++17
 
 # library-related parameters
 LDFLAGS = -L/opt/local/lib -lglfw -lGLEW -framework OpenGL

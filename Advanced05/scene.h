@@ -1,9 +1,9 @@
-/*!
+﻿/*!
   @file rx_controller.h
-	
+
   @brief GLUTによるOpenGLウィンドウクラス
- 
-  @author Makoto Fujisawa 
+
+  @author Makoto Fujisawa
   @date   2020-06
 */
 
@@ -60,8 +60,14 @@ protected:
 	static int m_simg_spacing;				//!< 画像保存間隔(=-1なら保存しない)
 
 	static rxMeshDeform2D* m_md;			//!< メッシュ変形
-	static glm::vec2 m_envmin, m_envmax;	//!< メッシュ描画範囲
+	static glm::vec2 m_envmin, m_envmax;	//!< メッシュ描画範囲(ウィンドウの縦横比に合わせて広げて表示)
+	static glm::vec2 m_view_center;			//!< 描画範囲の中心(注視点)
+	static bool m_panning;					//!< Ctrl+左ドラッグで注視点移動中
+	static double m_pan_x, m_pan_y;			//!< 注視点移動中の直前のマウス座標
 	static GLuint m_tex;					//!< テクスチャ
+	static string m_imgfile;				//!< メッシュ生成・テクスチャに使う画像ファイル名
+	static vector<string> m_imglist;		//!< 実行時フォルダにある画像ファイルのリスト
+	static rxImageMeshParams m_img_prm;		//!< 画像からのメッシュ生成パラメータ
 
 	static int m_picked;					//!< マウスピックされた頂点番号
 
@@ -87,6 +93,16 @@ public:
 	static void Destroy();
 
 private:
+	// 描画範囲(ウィンドウの縦横比に合わせる)とマウス座標->ワールド座標変換
+	static void viewRange(glm::vec2 &vmin, glm::vec2 &vmax);
+	static glm::vec2 screenToWorld(GLFWwindow* window, double x, double y);
+
+	// 実行時フォルダの画像ファイルをリストアップ
+	static void scanImages(void);
+
+	// 画像を読み込んでテクスチャとメッシュを作成
+	static bool loadImageMesh(void);
+
 	// アニメーション切り替え
 	static bool switchanimation(int on);
 

@@ -1,4 +1,4 @@
-/*! 
+﻿/*! 
   @file rx_utils.h
 
   @brief 各種便利な関数や定数など
@@ -20,6 +20,7 @@
 #include <cmath>
 //#include <cctype>
 #include <cstdio>
+#include <cstring>
 #include <cassert>
 
 #ifdef WIN32
@@ -50,6 +51,7 @@
 
 // 画像読み書き
 #include "rx_bitmap.h"
+#include "image.h"	// stb_imageによる画像読み込み(BMP,PNG,JPEG,TGA,GIFなど)
 
 // OpenGLのシェーダ
 #include "rx_shaders.h"
@@ -666,6 +668,33 @@ static inline void CheckGLError(const char *func, const char *file, int line)
 // テクスチャ関連
 //-----------------------------------------------------------------------------
 /*!
+ * 画像読込み(stb_image使用)
+ *  - 1行目が画像の下端になるように上下反転する(OpenGLのテクスチャ座標と合わせるため)
+ *  - 画素データは1画素c byteで隙間なく並ぶ(1行w*c byte)
+ *  - 使い終わったらfree()で解放すること
+ * @param[in] fn ファイル名
+ * @param[out] w,h,c 画像の幅,高さ,チャンネル数
+ * @return 画像データ(読み込み失敗ならNULL)
+ */
+static unsigned char* ReadImageBottomUp(const string& fn, int& w, int& h, int& c)
+{
+	unsigned char* data = 0;
+	if(!ReadImage(fn, w, h, c, data) || !data) return 0;
+
+	// 上下反転
+	int wstep = w*c;
+	vector<unsigned char> tmp(wstep);
+	for(int j = 0; j < h/2; ++j){
+		unsigned char* a = data+j*wstep;
+		unsigned char* b = data+(h-1-j)*wstep;
+		memcpy(&tmp[0], a, wstep);
+		memcpy(a, b, wstep);
+		memcpy(b, &tmp[0], wstep);
+	}
+	return data;
+}
+
+/*!
  * 画像読込み -> OpenGLテクスチャ登録
  * @param[in] fn ファイル名
  * @param[inout] tex_name テクスチャ名(0なら新たに生成)
@@ -675,9 +704,9 @@ static inline void CheckGLError(const char *func, const char *file, int line)
 static int loadTexture(const string& fn, GLuint& tex_name, bool mipmap, bool compress)
 {
 	// 画像読み込み
-	int w, h, c, wstep;
+	int w, h, c;
 	unsigned char* pimg;
-	pimg = ReadBitmapFile(fn, w, h, c, wstep, false, true);
+	pimg = ReadImageBottomUp(fn, w, h, c);
 	if(!pimg){
 		return 0;
 	}
@@ -688,6 +717,9 @@ static int loadTexture(const string& fn, GLuint& tex_name, bool mipmap, bool com
 	format = GL_RGBA;
 	if(c == 1){
 		format = GL_LUMINANCE;
+	}
+	else if(c == 2){
+		format = GL_LUMINANCE_ALPHA;
 	}
 	else if(c == 3){
 		format = GL_RGB;
@@ -707,6 +739,9 @@ static int loadTexture(const string& fn, GLuint& tex_name, bool mipmap, bool com
 		iformat = GL_RGBA;
 		if(c == 1){
 			iformat = GL_LUMINANCE;
+		}
+		else if(c == 2){
+			iformat = GL_LUMINANCE_ALPHA;
 		}
 		else if(c == 3){
 			iformat = GL_RGB;
@@ -749,7 +784,7 @@ static int loadTexture(const string& fn, GLuint& tex_name, bool mipmap, bool com
 
 	glBindTexture(GL_TEXTURE_2D, 0);
 
-	delete[] pimg;
+	free(pimg);
 
 	return 1;
 }

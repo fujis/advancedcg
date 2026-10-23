@@ -1,4 +1,4 @@
-/*!
+﻿/*!
   @file pbd.h
 	
   @brief PBDによる弾性体シミュレーション
@@ -7,8 +7,8 @@
   @date 2021
 */
 
-#ifndef _RX_PBD_STRAND_H_
-#define _RX_PBD_STRAND_H_
+#ifndef _RX_PBD_ELASTIC_H_
+#define _RX_PBD_ELASTIC_H_
 
 
 //-----------------------------------------------------------------------------
@@ -17,6 +17,9 @@
 #include "utils.h"
 
 #include "rx_mesh.h"
+
+// 表面メッシュからの四面体メッシュ生成
+#include "tetmesh.h"
 
 using namespace std;
 
@@ -86,6 +89,7 @@ public:
 	void GenerateStrand(glm::vec3 c1, glm::vec3 c2, int n);
 	void GenerateMesh(glm::vec2 c1, glm::vec2 c2, int nx, int ny);
 	void GenerateTetrahedralMeshFromFile(const string &filename);
+	bool GenerateTetrahedralMeshFromSurface(const string &filename, const rxTetMeshParams &prm, float size = 0.8f);
 
 	void Update(float dt);
 
@@ -98,6 +102,9 @@ public:
 	void SetCollisionFunc(CollisionFunc func){ m_fpCollision = func; }
 
 	glm::vec3 GetVertexPos(int i){ return ((i >= 0 && i < m_iNumVertices) ? m_vCurPos[i] : glm::vec3(0.0)); }
+	int GetNumVertices(void) const { return m_iNumVertices; }
+	int GetNumTriangles(void) const { return m_iNumTris; }
+	int GetNumTetrahedra(void) const { return m_iNumTets; }
 
 	// 固定点設定
 	void FixVertex(int i, const glm::vec3 &pos);
@@ -141,4 +148,4 @@ static inline float calVolume(const glm::vec3 &p0, const glm::vec3 &p1, const gl
 
 
 
-#endif // _RX_PBD_STRAND_H_
+#endif // _RX_PBD_ELASTIC_H_

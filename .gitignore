@@ -36,6 +36,8 @@ vc_msw/
 Debug/
 Release/
 Release(*)/
+Debug_*/
+Release_*/
 ipch/
 .vc/
 .vs/

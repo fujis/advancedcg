@@ -30,7 +30,7 @@ using namespace std;
 
 
 //-----------------------------------------------------------------------------
-// rxMSHクラスの宣言 - OBJ形式の読み込み
+// rxMSHクラスの宣言 - MSH形式の読み込み
 //-----------------------------------------------------------------------------
 class rxMSH
 {
@@ -92,7 +92,7 @@ inline int GetNextString(const string& src, string& sub, size_t pos, string sep 
 
 
 /*!
-* OBJファイル読み込み
+* MSHファイル読み込み
 * @param[in] file_name ファイル名(フルパス)
 * @param[out] vrts 頂点座標
 * @param[out] vnms 頂点法線

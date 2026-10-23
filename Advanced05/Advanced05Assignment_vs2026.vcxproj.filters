@@ -18,6 +18,9 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="image.cpp">
+      <Filter>Utilities</Filter>
+    </ClCompile>
     <ClCompile Include="main.cpp">
       <Filter>Main</Filter>
     </ClCompile>
@@ -50,6 +53,9 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\include\image.h">
+      <Filter>Utilities</Filter>
+    </ClInclude>
     <ClInclude Include="utils.h">
       <Filter>Utilities</Filter>
     </ClInclude>
@@ -73,6 +79,9 @@
     </ClInclude>
     <ClInclude Include="scene.h">
       <Filter>Main</Filter>
+    </ClInclude>
+    <ClInclude Include="mesh_image.h">
+      <Filter>Utilities</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

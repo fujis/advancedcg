@@ -1,4 +1,4 @@
-/*!
+﻿/*!
   @file rx_controller.cpp
 	
   @brief GLUTによるOpenGLウィンドウクラス
@@ -24,6 +24,9 @@
 // OpenGL描画関連
 #include "rx_trackball.h"	// 視点変更用トラックボールクラス
 #include "rx_shaders.h"		// GLSL関数
+
+#include <chrono>
+#include <filesystem>
 
 
 
@@ -52,6 +55,11 @@ int ScenePBD::m_currentstep = 0;				//!< 現在のステップ数
 int ScenePBD::m_simg_spacing = -1;				//!< 画像保存間隔(=-1なら保存しない)
 
 ElasticPBD* ScenePBD::m_elasticbody = 0;
+
+string ScenePBD::m_modelfile = "sphere.msh";	//!< 読み込むモデルファイル名
+vector<string> ScenePBD::m_modellist;			//!< 実行時フォルダにあるモデルファイルのリスト
+rxTetMeshParams ScenePBD::m_tet_prm;			//!< 表面メッシュからの四面体メッシュ生成パラメータ
+double ScenePBD::m_gen_time = 0.0;				//!< 四面体メッシュの読み込み・生成時間[ms]
 
 int ScenePBD::m_picked = -1;
 float ScenePBD::m_pickdist = 1.0;	//!< ピックされた点までの距離
@@ -99,6 +107,9 @@ void ScenePBD::Init(int argc, char* argv[])
 	m_draw = 0;
 	m_draw |= RXD_BBOX;
 	m_draw |= RXD_FLOOR;
+
+	// モデルファイルのリストアップ
+	scanModels();
 
 	// PBD初期設定
 	initRod();
@@ -313,13 +324,43 @@ void ScenePBD::ImGui(GLFWwindow* window)
 	if(ImGui::Button("rod (1D)")){ initRod(); }
 	if(ImGui::Button("cloth (2D)")){ initCloth(); }
 	if(ImGui::Button("ball (3D)")){ initBall(); }
+	if(ImGui::TreeNode("3D model")){
+		// モデルファイルの選択(選択したら読み込む)
+		//  - *.msh : Gmshで作成した四面体メッシュ
+		//  - *.obj : 表面メッシュ(内部に四面体メッシュを生成する)
+		if(ImGui::BeginCombo("model", m_modelfile.c_str())){
+			for(const string &f : m_modellist){
+				bool selected = (f == m_modelfile);
+				if(ImGui::Selectable(f.c_str(), selected)){
+					m_modelfile = f;
+					initModel(m_modelfile);
+				}
+				if(selected) ImGui::SetItemDefaultFocus();
+			}
+			ImGui::EndCombo();
+		}
+		if(ImGui::Button("load")){ initModel(m_modelfile); }
+		ImGui::SameLine();
+		if(ImGui::Button("rescan")){ scanModels(); }
+		ImGui::Text("tetrahedralization (obj):");
+		ImGui::InputDouble("spacing", &m_tet_prm.spacing, 0.005, 0.02, "%.3f");
+		if(m_tet_prm.spacing < 0.01) m_tet_prm.spacing = 0.01;
+		ImGui::InputDouble("min quality", &m_tet_prm.min_quality, 0.01, 0.1, "%.2f");
+		m_tet_prm.min_quality = RX_CLAMP<double>(m_tet_prm.min_quality, 0.0, 0.5);
+		ImGui::Checkbox("use surface vertices", &m_tet_prm.use_surface_vertices);
+		ImGui::TreePop();
+	}
+	ImGui::Text("vertices: %d, tetrahedra: %d", m_elasticbody->GetNumVertices(), m_elasticbody->GetNumTetrahedra());
+	ImGui::Text("surface triangles: %d (%.1f ms)", m_elasticbody->GetNumTriangles(), m_gen_time);
 	ImGui::Checkbox("use edges inside", &(m_elasticbody->m_bUseInEdge));
 	ImGui::Separator();
 	ImGui::InputInt("iterations", &(m_elasticbody->m_iNmax), 1, 20);
-	ImGui::InputFloat("stiffness", &(m_elasticbody->m_fK), 0.01f, 1.0f, "%.2f");
+	if(ImGui::InputFloat("stiffness", &(m_elasticbody->m_fK), 0.01f, 1.0f, "%.2f")){
+		m_elasticbody->m_fK = RX_CLAMP<float>(m_elasticbody->m_fK, 0.0, 1.0);
+	}
 	ImGui::InputFloat("wind", &(m_elasticbody->m_fWind), 0.01f, 0.5f, "%.2f");
 	ImGui::Separator();
-	if(ImGui::Button("quit")){ glfwSetWindowShouldClose(window, GLFW_FALSE); }
+	if(ImGui::Button("quit")){ glfwSetWindowShouldClose(window, GLFW_TRUE); }
 
 }
 
@@ -452,6 +493,20 @@ void ScenePBD::initCloth(void)
  */
 void ScenePBD::initBall(void)
 {
+	// 四面体構造生成：処理が重い場合は"sphere_sparse.msh"の方を使う
+	m_modelfile = "sphere.msh";
+	//m_modelfile = "sphere_sparse.msh";
+	initModel(m_modelfile);
+}
+
+/*!
+ * ファイルから読み込んだ3次元モデルで初期化
+ *  - *.msh : Gmshで作成した四面体メッシュをそのまま使う
+ *  - *.obj : 表面メッシュを読み込んで内部に四面体メッシュを生成する(頂点間隔はm_tet_prm.spacing)
+ * @param[in] filename モデルファイル名
+ */
+void ScenePBD::initModel(const string &filename)
+{
 	m_draw &= ~RXD_VERTEX;
 	m_draw |= RXD_EDGE;
 	m_draw |= RXD_FACE;
@@ -474,12 +529,60 @@ void ScenePBD::initBall(void)
 	p.addSearchPath("../bin");
 	p.addSearchPath("../../bin");
 
-	// 四面体構造生成：処理が重い場合は"sphere_sparse.msh"の方を使う
-	std::string filename = p.find("sphere.msh");
-	//std::string filename = p.find("sphere_sparse.msh");
-	m_elasticbody->GenerateTetrahedralMeshFromFile(filename);
+	// 四面体構造生成(拡張子で読み込み方法を切り替え)
+	std::string path = p.find(filename);
+	std::string ext = std::filesystem::path(path).extension().string();
+	std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+	auto t0 = std::chrono::high_resolution_clock::now();
+	if(ext == ".obj"){
+		if(!m_elasticbody->GenerateTetrahedralMeshFromSurface(path, m_tet_prm)){
+			cout << "Error : could not generate a tetrahedral mesh from " << path << endl;
+		}
+		// 生成した四面体メッシュは内部の頂点が多いので，内部エッジにもstretching constraintを適用する
+		// (表面のエッジとvolume constraintだけでは内部の頂点の動きを抑えきれずに発散しやすい)
+		m_elasticbody->m_bUseInEdge = true;
+	}
+	else{
+		m_elasticbody->GenerateTetrahedralMeshFromFile(path);
+	}
+	auto t1 = std::chrono::high_resolution_clock::now();
+	m_gen_time = std::chrono::duration<double, std::milli>(t1-t0).count();
+	cout << filename << " : " << m_elasticbody->GetNumVertices() << " vertices, " << m_elasticbody->GetNumTetrahedra() << " tetrahedra, ";
+	cout << m_elasticbody->GetNumTriangles() << " surface triangles (" << m_gen_time << " ms)" << endl;
 
 	m_picked = -1;
+}
+
+/*!
+ * 実行時フォルダ(とbinフォルダ)にあるモデルファイル(*.msh, *.obj)をリストアップ
+ */
+void ScenePBD::scanModels(void)
+{
+	namespace fs = std::filesystem;
+	const char* exts[] = { ".msh", ".obj" };
+	const char* dirs[] = { ".", "bin", "../bin", "../../bin" };
+
+	m_modellist.clear();
+	vector<fs::path> found;
+	for(const char* d : dirs){
+		std::error_code ec;
+		if(!fs::is_directory(d, ec)) continue;
+		for(const auto &e : fs::directory_iterator(d, ec)){
+			if(!e.is_regular_file(ec)) continue;
+			string ext = e.path().extension().string();
+			std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+			if(std::find(std::begin(exts), std::end(exts), ext) == std::end(exts)) continue;
+
+			// 同じファイルを別のパスで重複して登録しない
+			fs::path cp = fs::weakly_canonical(e.path(), ec);
+			if(std::find(found.begin(), found.end(), cp) != found.end()) continue;
+			found.push_back(cp);
+
+			string f = (string(d) == ".") ? e.path().filename().string() : e.path().generic_string();
+			m_modellist.push_back(f);
+		}
+	}
+	std::sort(m_modellist.begin(), m_modellist.end());
 }
 
 /*!

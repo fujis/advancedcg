@@ -329,7 +329,7 @@ void SceneSWE::ImGui(GLFWwindow* window)
 	ImGui::InputFloat("scale", &(m_scale), 0.1f, 1.0f, "%.1f");
 	ImGui::InputFloat("dt", &(g_dt), 0.001f, 0.01f, "%.3f");
 	ImGui::Separator();
-	if(ImGui::Button("quit")){ glfwSetWindowShouldClose(window, GLFW_FALSE); }
+	if(ImGui::Button("quit")){ glfwSetWindowShouldClose(window, GLFW_TRUE); }
 
 }
 

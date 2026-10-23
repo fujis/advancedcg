@@ -3,7 +3,7 @@ COMPILER = g++
 CXXFLAGS = -O3 -std=c++11
 
 # library-related parameters
-LDFLAGS = -lglfw -lGLEW -lGL -lIL -lILU -lILUT
+LDFLAGS = -lglfw -lGLEW -lGL
 LIBS    = 
 
 # Include folder specification

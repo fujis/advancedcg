@@ -1,4 +1,4 @@
-/*!
+﻿/*!
   @file deformation.h
 
   @brief 2Dメッシュ変形
@@ -15,6 +15,9 @@
 // インクルードファイル
 //-----------------------------------------------------------------------------
 #include "utils.h"
+
+// 画像からのメッシュ生成
+#include "mesh_image.h"
 
 //-----------------------------------------------------------------------------
 // 定義
@@ -40,6 +43,8 @@ class rxMeshDeform2D
 	GLuint m_vao_mesh;				//!< メッシュデータのVAO
 	GLuint m_vao_fix;				//!< 固定頂点のためのVAO
 
+	rxMeshQuality m_quality;		//!< メッシュの品質(三角形の内角)
+
 public:
 	double m_alpha;					//!< 重み計算のための係数(w=1/(v-p)^(2*alpha)
 	int m_deform_type;				//!< 変形のタイプ(0:affine, 1:similarity, 2:rigid)
@@ -52,8 +57,12 @@ public:
 	~rxMeshDeform2D();
 
 public:
-	//! 初期化
+	//! 初期化(0:格子メッシュ, 1:ランダムメッシュ)
 	void Init(int random_mesh = 0);
+	//! 画像中のオブジェクト形状に沿ったメッシュで初期化
+	bool InitImage(const string &filename, const rxImageMeshParams &prm);
+	//! 頂点座標を初期形状に戻す(制御点は解除)
+	void ResetShape(void);
 	//! 更新
 	int Update(double dt);
 	//! 描画
@@ -70,6 +79,14 @@ public:
 	void SetCP(int idx, glm::vec2 pos, bool move = false);
 	//! 固定点解除
 	void UnsetCP(int idx);
+	//! 全固定点解除
+	void ClearCP(void);
+
+	// アクセス関数
+	int NumVertices(void) const { return m_iNv; }
+	int NumTriangles(void) const { return m_iNt; }
+	int NumCP(void) const { return m_iNcp; }
+	const rxMeshQuality& Quality(void) const { return m_quality; }
 
 protected:
 	//! n×nの頂点を持つメッシュ生成(x-z平面)
@@ -77,6 +94,9 @@ protected:
 
 	//! ポアソンディスクサンプリングによるメッシュ生成
 	void generateRandomMesh(glm::vec2 c1, glm::vec2 c2, double min_dist, int n);
+
+	//! メッシュ設定後の共通処理(VAO作成,固定点解除,品質計算)
+	void onMeshChanged(void);
 
 	//! 固定点座標VAOの更新
 	void updateCPVAO(void);

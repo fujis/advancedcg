@@ -1,4 +1,4 @@
-/*!
+﻿/*!
   @file rx_controller.h
 	
   @brief GLUTによるOpenGLウィンドウクラス
@@ -77,6 +77,12 @@ protected:
 	static float m_dt;
 	static ElasticPBD* m_elasticbody;
 
+	// 3次元モデル(四面体メッシュ)
+	static string m_modelfile;				//!< 読み込むモデルファイル名(*.msh:四面体メッシュ, *.obj:表面メッシュ->四面体を生成)
+	static vector<string> m_modellist;		//!< 実行時フォルダにあるモデルファイルのリスト
+	static rxTetMeshParams m_tet_prm;		//!< 表面メッシュからの四面体メッシュ生成パラメータ
+	static double m_gen_time;				//!< 四面体メッシュの読み込み・生成時間[ms]
+
 	//! マウスピック
 	static int m_picked;
 	static float m_pickdist;	//!< ピックされた点までの距離
@@ -114,6 +120,8 @@ private:
 	static void initRod(void);
 	static void initCloth(void);
 	static void initBall(void);
+	static void initModel(const string &filename);
+	static void scanModels(void);
 
 	// マウスピック
 	static void clearPick(void);
