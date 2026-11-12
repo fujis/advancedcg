@@ -1,4 +1,4 @@
-﻿/*! 
+/*! 
   @file pbd.cpp
 	
   @brief PBDによる弾性体シミュレーション
@@ -212,7 +212,7 @@ void ElasticPBD::Update(float dt)
 ElasticPBD::ElasticPBD(int obj)
 {
 	m_iObjectNo = obj;
-	m_bUseInEdge = false;
+	m_bUseInEdge = true;
 
 	//m_v3Gravity = glm::vec3(0.0, -9.81, 0.0);
 	m_v3Gravity = glm::vec3(0.0, -0.5, 0.0);
